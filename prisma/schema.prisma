@@ -1,0 +1,896 @@
+// Sanat Yapıları Şantiye Üretim ve Teknik Ofis Yönetim Sistemi
+// Veri modeli — onaylanan tasarım dokümanı §3 ile birebir hizalı.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// KULLANICI / ROL / YETKİ
+// ─────────────────────────────────────────────
+
+enum RoleName {
+  YONETICI
+  TEKNIK_OFIS
+  SAHA_MUHENDISI
+  QAQC
+  SURVEY
+  IZLEYICI
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         RoleName
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  auditLogs         AuditLog[]
+  uploadedFiles     Attachment[]
+  reportedIssues    Issue[]
+  inspections       Inspection[]      @relation("Inspector")
+  overriddenPours   ConcretePour[]    @relation("OverrideUser")
+  checkedItems      ConcretePourChecklistItem[]
+  responsibleActivities Activity[]    @relation("ActivityResponsible")
+  qaqcActivities        Activity[]    @relation("ActivityQaqc")
+  surveyActivities      Activity[]    @relation("ActivitySurvey")
+  responsiblePours      ConcretePour[] @relation("PourResponsible")
+  bookingOverrides      ResourceBooking[] @relation("BookingOverride")
+  segmentGateRules      SegmentGateRule[]
+  archivedStructures    Structure[]       @relation("StructureArchiver")
+  archivedElements      StructureElement[] @relation("ElementArchiver")
+  responsibleSegments   BalancedCantileverSegment[] @relation("SegmentResponsible")
+}
+
+// RolePermission: rol → kaynak → eylem ince ayarı (kod değişikliği olmadan)
+model RolePermission {
+  id       String   @id @default(cuid())
+  role     RoleName
+  resource String // örn: "concretePour", "drawingRevision", "inspection"
+  action   String // "create" | "read" | "update" | "delete"
+
+  @@unique([role, resource, action])
+}
+
+// ─────────────────────────────────────────────
+// PROJE / YAPI HİYERARŞİSİ
+// ─────────────────────────────────────────────
+
+model Project {
+  id        String      @id @default(cuid())
+  code      String      @unique
+  name      String
+  country   String?
+  client    String?
+  startDate DateTime?
+  isSample  Boolean     @default(false) // ÖRNEK VERİ işareti (madde 68)
+  structures Structure[]
+}
+
+enum StructureType {
+  VIYADUK
+  KOPRU
+  ALT_GECIT
+  UST_GECIT
+  MENFEZ
+  DIGER
+}
+
+model Structure {
+  id            String        @id @default(cuid())
+  projectId     String
+  project       Project       @relation(fields: [projectId], references: [id])
+  code          String        @unique // "VIA-11"
+  name          String
+  type          StructureType
+  startChainage String?
+  endChainage   String?
+  isSample      Boolean       @default(false)
+
+  // Proje özelliği (§44): dengeli konsol sekmesi bu bayrağa göre görünür.
+  // Kodda VIA-10/VIA-11 gibi hard-code özel durum YOKTUR — bilgi DB'den gelir.
+  hasBalancedCantilever Boolean @default(false)
+
+  // Arşivleme (§51): gerçek üretim verisi olan yapı fiziksel silinmez, arşivlenir.
+  // Arşivli yapı aktif listelerden/seçim kutularından gizlenir; geçmiş kayıtları korunur.
+  archivedAt    DateTime?
+  archivedById  String?
+  archivedBy    User?         @relation("StructureArchiver", fields: [archivedById], references: [id])
+  archiveReason String?
+
+  elements StructureElement[]
+  drawings Drawing[]
+  rfis     RFI[]
+  ncrs     NCR[]
+
+  @@index([projectId])
+}
+
+enum ElementType {
+  ABUTMENT
+  PIER
+  PILE_CAP
+  PIER_GOVDESI
+  BASLIK
+  BEARING
+  DIGER
+}
+
+// Taban iş akışı durumu — Bloke/Gecikmiş bunun üstüne HESAPLANIR (saklanmaz)
+enum ElementStatus {
+  PLANLANMADI
+  PLANLANDI
+  BASLANMADI
+  DEVAM_EDIYOR
+  KONTROL_BEKLIYOR
+  ONAY_BEKLIYOR
+  TAMAMLANDI
+  IPTAL
+}
+
+model StructureElement {
+  id            String        @id @default(cuid())
+  structureId   String
+  structure     Structure     @relation(fields: [structureId], references: [id])
+  parentId      String?
+  parent        StructureElement?  @relation("ElementTree", fields: [parentId], references: [id])
+  children      StructureElement[] @relation("ElementTree")
+  code          String        @unique // "VIA11-P05-PC"
+  name          String
+  elementType   ElementType
+  sequenceIndex Int           @default(0)
+  status        ElementStatus @default(PLANLANMADI)
+  plannedStart  DateTime?
+  plannedEnd    DateTime?
+  actualStart   DateTime?
+  actualEnd     DateTime?
+  notes         String?
+
+  // Arşivleme (§49): yanlış eklenen eleman kaldırılabilir ama veri sessizce yok edilmez.
+  // Bağlı kaydı olan eleman fiziksel silinemez; arşivlenir.
+  archivedAt    DateTime?
+  archivedById  String?
+  archivedBy    User?     @relation("ElementArchiver", fields: [archivedById], references: [id])
+  archiveReason String?
+
+  activities     Activity[]
+  pileGroups     PileGroup[]
+  segments       BalancedCantileverSegment[]
+  concretePours  ConcretePour[]
+  drawings       Drawing[]
+  rfis           RFI[]
+  ncrs           NCR[]
+  inspections    Inspection[]
+  drawingUsages  ElementDrawingUsage[]
+
+  @@index([structureId])
+  @@index([parentId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────
+// AKTİVİTE / BAĞIMLILIK / ŞABLON
+// ─────────────────────────────────────────────
+
+// Madde 6: Planlandı / Başlanabilir / İmalata Hazır ayrı kavramlardır.
+// PLANLANDI      → takvimde yeri var, ön koşulları henüz sağlanmamış olabilir
+// BASLANABILIR   → öncül bağımlılıklar (Dependency/RFI/ITP) temiz, hazırlık henüz tam değil
+// IMALATA_HAZIR  → hazırlık kapısı da geçti (çizim, malzeme, ekip, kontrol) — iş başlayabilir
+enum ActivityStatus {
+  PLANLANMADI
+  PLANLANDI
+  BASLANABILIR
+  IMALATA_HAZIR
+  DEVAM_EDIYOR
+  KONTROL_BEKLIYOR
+  ONAY_BEKLIYOR
+  TAMAMLANDI
+  IPTAL
+}
+
+model Activity {
+  id             String         @id @default(cuid())
+  elementId      String
+  element        StructureElement @relation(fields: [elementId], references: [id])
+  activityType   String // katalog anahtarı: "DONATI", "KALIP", "SURVEY", "BETON", ...
+  name           String
+  status         ActivityStatus @default(PLANLANMADI)
+  sequenceIndex  Int            @default(0)
+  plannedStart   DateTime?
+  plannedEnd     DateTime?
+  actualStart    DateTime?
+  actualEnd      DateTime?
+  responsibleRole RoleName?
+  notes          String?
+
+  // Ekip bazlı plan: sorumlu mühendis / ekip / QA-QC / Survey / ekipman ayrı ayrı izlenir
+  responsibleUserId   String?
+  responsibleUser     User?     @relation("ActivityResponsible", fields: [responsibleUserId], references: [id])
+  qaqcUserId          String?
+  qaqcUser            User?     @relation("ActivityQaqc", fields: [qaqcUserId], references: [id])
+  surveyUserId        String?
+  surveyUser          User?     @relation("ActivitySurvey", fields: [surveyUserId], references: [id])
+  crewResourceId      String?
+  crewResource        Resource? @relation("ActivityCrew", fields: [crewResourceId], references: [id])
+  equipmentResourceId String?
+  equipmentResource   Resource? @relation("ActivityEquipment", fields: [equipmentResourceId], references: [id])
+
+  predecessors Dependency[] @relation("Successor")
+  successors   Dependency[] @relation("Predecessor")
+  rfiLinks     RFIAffectedActivity[]
+  inspections  Inspection[]
+  bookings     ResourceBooking[]
+
+  @@index([elementId])
+  @@index([status])
+  @@index([plannedStart])
+  @@index([plannedEnd])
+  @@index([responsibleUserId])
+  @@index([crewResourceId])
+}
+
+enum DependencyType {
+  FINISH_TO_START
+}
+
+model Dependency {
+  id                    String         @id @default(cuid())
+  predecessorActivityId String
+  predecessor           Activity       @relation("Predecessor", fields: [predecessorActivityId], references: [id])
+  successorActivityId   String
+  successor             Activity       @relation("Successor", fields: [successorActivityId], references: [id])
+  type                  DependencyType @default(FINISH_TO_START)
+
+  @@unique([predecessorActivityId, successorActivityId])
+  @@index([successorActivityId])
+}
+
+// Eleman tipi başına standart iş akışı şablonu (madde 35)
+model ActivityTemplate {
+  id          String                 @id @default(cuid())
+  elementType ElementType            @unique
+  name        String
+  steps       ActivityTemplateStep[]
+}
+
+model ActivityTemplateStep {
+  id            String           @id @default(cuid())
+  templateId    String
+  template      ActivityTemplate @relation(fields: [templateId], references: [id])
+  activityType  String
+  name          String
+  sequenceOrder Int
+  // Pile → Pile Cap bağımlılığı: bu adım, pier kazık grubunun kabulünü şart koşar.
+  // Hangi adımın şart koştuğu proje tanımıdır — kod varsayımı değil.
+  requiresPileAcceptance Boolean @default(false)
+
+  @@unique([templateId, sequenceOrder])
+}
+
+// Dengeli konsol zincir kuralı: Segment N+1'in başlaması için N'de hangi adımların
+// tamamlanması gerektiği proje/Method Statement tarafından tanımlanır (sabit varsayım değil).
+// structureId null → proje geneli varsayılan kural.
+model SegmentGateRule {
+  id                  String   @id @default(cuid())
+  structureId         String?  @unique
+  requiredSteps       String[] // segment adım alan adları: "rebarStatus", "groutingStatus", ...
+  requireStrength     Boolean  @default(true) // gerekli beton dayanımına ulaşılmış olmalı
+  asymmetryThreshold  Int      @default(2)
+  note                String?  // Method Statement / onaylı yapım sırası referansı
+  updatedById         String?
+  updatedBy           User?    @relation(fields: [updatedById], references: [id])
+  updatedAt           DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────
+// KAZIK
+// ─────────────────────────────────────────────
+
+model PileGroup {
+  id              String           @id @default(cuid())
+  elementId       String
+  element         StructureElement @relation(fields: [elementId], references: [id])
+  name            String
+  designPileCount Int
+
+  piles Pile[]
+
+  @@index([elementId])
+}
+
+enum PileStatus {
+  PLANLANDI
+  DELGI_BEKLIYOR
+  DELGI_DEVAM_EDIYOR
+  DELGI_TAMAMLANDI
+  DONATI_KAFESI_HAZIRLANIYOR
+  DONATI_KAFESI_HAZIR
+  BETON_BEKLIYOR
+  BETONLANDI
+  TEST_BEKLIYOR
+  TEST_YAPILDI
+  KABUL_EDILDI
+  PROBLEMLI
+}
+
+enum PileTestStatus {
+  BEKLIYOR
+  YAPILDI
+}
+
+enum PileAcceptanceStatus {
+  BEKLIYOR
+  KABUL
+  RED
+}
+
+model Pile {
+  id                      String     @id @default(cuid())
+  pileGroupId             String
+  pileGroup               PileGroup  @relation(fields: [pileGroupId], references: [id])
+  code                    String     @unique // "VIA11-P05-PILE-01"
+  locationNote            String?
+  diameterMm              Int?
+  designLengthM           Decimal?   @db.Decimal(8, 2)
+  actualLengthM           Decimal?   @db.Decimal(8, 2)
+  drillStart              DateTime?
+  drillEnd                DateTime?
+  status                  PileStatus @default(PLANLANDI)
+  rebarCageStatus         String?
+  concreteClass           String?    // bilinmiyorsa null → UI "Belirtilmemiş" gösterir (madde 49)
+  plannedConcreteVolumeM3 Decimal?   @db.Decimal(10, 2)
+  actualConcreteVolumeM3  Decimal?   @db.Decimal(10, 2)
+  concreteDate            DateTime?
+  testStatus              PileTestStatus       @default(BEKLIYOR)
+  testResult              String?
+  acceptanceStatus        PileAcceptanceStatus @default(BEKLIYOR)
+  problemDescription      String?
+
+  concretePours ConcretePour[]
+
+  @@index([pileGroupId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────
+// BETON DÖKÜMÜ
+// ─────────────────────────────────────────────
+
+enum PourTargetType {
+  PILE
+  STRUCTURE_ELEMENT
+  SEGMENT
+}
+
+enum ConcretePourStatus {
+  PLANLANDI
+  HAZIR_DEGIL
+  BASLANABILIR // bağımlılıklar temiz, hazırlık kapısı henüz tam değil (madde 6)
+  BETON_DOKUMUNE_HAZIR
+  BETON_DOKULUYOR
+  TAMAMLANDI
+  IPTAL
+}
+
+enum CheckStatus {
+  BEKLIYOR
+  TAMAMLANDI
+}
+
+model ConcretePour {
+  id                 String             @id @default(cuid())
+  code               String             @unique // "POUR-2026-0001"
+  targetType         PourTargetType
+  pileId             String?
+  pile               Pile?              @relation(fields: [pileId], references: [id])
+  structureElementId String?
+  structureElement   StructureElement?  @relation(fields: [structureElementId], references: [id])
+  segmentId          String?
+  segment            BalancedCantileverSegment? @relation(fields: [segmentId], references: [id])
+
+  plannedDate     DateTime
+  plannedTime     String? // "07:00"
+  concreteClass   String? // null → "Belirtilmemiş"
+  plannedVolumeM3 Decimal  @db.Decimal(10, 2)
+  actualVolumeM3  Decimal? @db.Decimal(10, 2)
+  batchPlantName  String?
+  pumpResourceId  String?
+  pumpResource    Resource? @relation("PumpPours", fields: [pumpResourceId], references: [id])
+  crewResourceId  String?
+  crewResource    Resource? @relation("CrewPours", fields: [crewResourceId], references: [id])
+  pourStart       DateTime?
+  pourEnd         DateTime?
+
+  // Madde 10: gerçekçi planlama girdileri (lojistik optimizasyonu YOK — sadece süre/pencere hesabı)
+  // Süre = hacim / pompa kapasitesi; kullanıcı elle geçersiz kılabilir.
+  estimatedDurationMin Int?     // hesaplanan veya elle girilen tahmini döküm süresi
+  durationOverridden   Boolean  @default(false)
+  plannedEndTime       DateTime? // plannedDate+plannedTime + süre (sorgu kolaylığı için saklanır)
+  // Ekip bazlı plan (madde 2): sorumlu mühendis / QA-QC / Survey ayrı ayrı
+  responsibleUserId String?
+  responsibleUser   User?   @relation("PourResponsible", fields: [responsibleUserId], references: [id])
+  qaqcUserId        String?
+  surveyUserId      String?
+
+  qaqcStatus   CheckStatus @default(BEKLIYOR)
+  surveyStatus CheckStatus @default(BEKLIYOR)
+  itpStatus    CheckStatus @default(BEKLIYOR)
+
+  status         ConcretePourStatus @default(PLANLANDI)
+  isOverride     Boolean            @default(false)
+  overrideById   String?
+  overrideBy     User?              @relation("OverrideUser", fields: [overrideById], references: [id])
+  overrideAt     DateTime?
+  overrideReason String?
+  notes          String?
+  createdAt      DateTime           @default(now())
+
+  checklistItems ConcretePourChecklistItem[]
+  testSamples    ConcreteTestSample[]
+  bookings       ResourceBooking[]
+
+  @@index([plannedDate])
+  @@index([status])
+  @@index([pileId])
+  @@index([structureElementId])
+  @@index([segmentId])
+}
+
+// Katalog: hazırlık kapısı maddeleri (madde 11) — targetType'a göre filtrelenir
+model ChecklistTemplateItem {
+  id            String         @id @default(cuid())
+  itemKey       String         @unique // "IFC_DRAWING", "REBAR_DONE", ...
+  label         String // Türkçe etiket
+  appliesTo     PourTargetType[] // hangi hedef tiplerine uygulanır
+  sequenceOrder Int
+}
+
+model ConcretePourChecklistItem {
+  id          String       @id @default(cuid())
+  pourId      String
+  pour        ConcretePour @relation(fields: [pourId], references: [id], onDelete: Cascade)
+  itemKey     String
+  label       String
+  isChecked   Boolean      @default(false)
+  checkedById String?
+  checkedBy   User?        @relation(fields: [checkedById], references: [id])
+  checkedAt   DateTime?
+
+  @@unique([pourId, itemKey])
+  @@index([pourId])
+}
+
+enum TestSampleType {
+  KUP
+  SILINDIR
+}
+
+enum TestResultStatus {
+  BEKLIYOR
+  GECTI
+  KALDI
+}
+
+model ConcreteTestSample {
+  id           String           @id @default(cuid())
+  pourId       String
+  pour         ConcretePour     @relation(fields: [pourId], references: [id], onDelete: Cascade)
+  sampleCode   String
+  castDate     DateTime
+  testType     TestSampleType
+  ageDays      Int
+  testDate     DateTime?
+  resultMPa    Decimal?         @db.Decimal(6, 2)
+  resultStatus TestResultStatus @default(BEKLIYOR)
+
+  @@index([pourId])
+}
+
+// ─────────────────────────────────────────────
+// DENGELİ KONSOL
+// ─────────────────────────────────────────────
+
+enum SegmentSide {
+  SOL
+  SAG
+  TEK
+}
+
+enum StepStatus {
+  BEKLIYOR
+  DEVAM_EDIYOR
+  TAMAMLANDI
+}
+
+enum SegmentStatus {
+  PLANLANMADI
+  PLANLANDI
+  BASLANABILIR // hesaplanır ama cache'lenmiş gösterim için tutulmaz — servis belirler
+  DEVAM_EDIYOR
+  TAMAMLANDI
+  IPTAL
+}
+
+model BalancedCantileverSegment {
+  id                          String        @id @default(cuid())
+  pierElementId               String
+  pierElement                 StructureElement @relation(fields: [pierElementId], references: [id])
+  code                        String        @unique // "VIA11-P05-SEG-07"
+  segmentNumber               Int
+  side                        SegmentSide
+  plannedDate                 DateTime?
+  plannedEnd                  DateTime?
+  actualStart                 DateTime?
+  actualEnd                   DateTime?
+
+  // Operasyonel planlama (§48): segment yalnızca mühendislik kaydı değildir —
+  // sahadaki işi planlayabilmek için kaynak/sorumluluk bilgisi de tutulur.
+  // Bu alanlar günlük plan, look-ahead ve kaynak çakışma motoruna beslenir.
+  pumpResourceId    String?
+  pumpResource      Resource? @relation("SegmentPumps", fields: [pumpResourceId], references: [id])
+  crewResourceId    String?
+  crewResource      Resource? @relation("SegmentCrews", fields: [crewResourceId], references: [id])
+  responsibleUserId String?
+  responsibleUser   User?     @relation("SegmentResponsible", fields: [responsibleUserId], references: [id])
+  notes             String?
+  rebarStatus                 StepStatus    @default(BEKLIYOR)
+  formworkStatus              StepStatus    @default(BEKLIYOR)
+  tendonStatus                StepStatus    @default(BEKLIYOR)
+  anchorageStatus             StepStatus    @default(BEKLIYOR)
+  embeddedItemsStatus         StepStatus    @default(BEKLIYOR)
+  inspectionStatus            StepStatus    @default(BEKLIYOR) // "Kontrol" adımı
+  concreteStatus              StepStatus    @default(BEKLIYOR)
+  requiredConcreteStrengthMPa Decimal?      @db.Decimal(6, 2)
+  achievedConcreteStrengthMPa Decimal?      @db.Decimal(6, 2)
+  postTensioningStatus        StepStatus    @default(BEKLIYOR)
+  surveyStatus                StepStatus    @default(BEKLIYOR)
+  groutingStatus              StepStatus    @default(BEKLIYOR)
+  status                      SegmentStatus @default(PLANLANMADI)
+
+  concretePours ConcretePour[]
+  bookings      ResourceBooking[]
+
+  @@unique([pierElementId, side, segmentNumber])
+  @@index([pierElementId])
+}
+
+// ─────────────────────────────────────────────
+// KAYNAK / REZERVASYON
+// ─────────────────────────────────────────────
+
+enum ResourceType {
+  POMPA
+  VINC
+  KALIP_EKIBI
+  DONATI_EKIBI
+  BETON_EKIBI
+  SURVEY_EKIBI
+  QAQC_EKIBI
+  DIGER
+}
+
+model Resource {
+  id   String       @id @default(cuid())
+  type ResourceType
+  name String
+  code String       @unique // "P-02"
+
+  // Madde 4: fiziksel olarak aynı anda iki yerde bulunamayan kaynak (pompa, vinç, tek ekip)
+  // çakışınca KRİTİK üretir; bölünebilir kaynak UYARI üretir.
+  isPhysicallyExclusive Boolean @default(true)
+  // Pompa kapasitesi (m³/saat) — beton süresi tahmininde kullanılır (madde 10)
+  capacityM3PerHour Decimal? @db.Decimal(6, 2)
+
+  bookings          ResourceBooking[]
+  pumpPours         ConcretePour[] @relation("PumpPours")
+  crewPours         ConcretePour[] @relation("CrewPours")
+  activityCrews     Activity[]     @relation("ActivityCrew")
+  activityEquipment Activity[]     @relation("ActivityEquipment")
+  segmentPumps      BalancedCantileverSegment[] @relation("SegmentPumps")
+  segmentCrews      BalancedCantileverSegment[] @relation("SegmentCrews")
+}
+
+enum BookingTargetType {
+  CONCRETE_POUR
+  ACTIVITY
+  SEGMENT
+}
+
+model ResourceBooking {
+  id            String            @id @default(cuid())
+  resourceId    String
+  resource      Resource          @relation(fields: [resourceId], references: [id])
+  targetType    BookingTargetType
+  pourId        String?
+  pour          ConcretePour?     @relation(fields: [pourId], references: [id], onDelete: Cascade)
+  activityId    String?
+  activity      Activity?         @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  segmentId     String?
+  segment       BalancedCantileverSegment? @relation(fields: [segmentId], references: [id])
+  startDateTime DateTime
+  endDateTime   DateTime
+
+  // Madde 4: kritik çakışma yetkili kullanıcı tarafından kabul edilebilir; iz kaydı zorunlu.
+  conflictOverride       Boolean   @default(false)
+  conflictOverrideReason String?
+  conflictOverrideById   String?
+  conflictOverrideBy     User?     @relation("BookingOverride", fields: [conflictOverrideById], references: [id])
+  conflictOverrideAt     DateTime?
+
+  @@index([resourceId, startDateTime])
+  @@index([activityId])
+}
+
+// ─────────────────────────────────────────────
+// TEKNİK OFİS: ÇİZİM / RFI
+// ─────────────────────────────────────────────
+
+enum DrawingType {
+  IFC
+  SHOP_DRAWING
+  DIGER
+}
+
+enum RevisionStatus {
+  TASLAK
+  INCELEMEDE
+  ONAYLI
+  REDDEDILDI
+  SUPERSEDED
+}
+
+model Drawing {
+  id          String      @id @default(cuid())
+  structureId String
+  structure   Structure   @relation(fields: [structureId], references: [id])
+  elementId   String?
+  element     StructureElement? @relation(fields: [elementId], references: [id])
+  drawingType DrawingType
+  code        String      @unique
+  title       String
+
+  revisions DrawingRevision[]
+  usages    ElementDrawingUsage[]
+
+  @@index([structureId])
+}
+
+model DrawingRevision {
+  id           String         @id @default(cuid())
+  drawingId    String
+  drawing      Drawing        @relation(fields: [drawingId], references: [id])
+  revisionCode String // "Rev.04"
+  status       RevisionStatus @default(TASLAK)
+  approvedDate DateTime?
+  attachmentId String?
+
+  siteUsages ElementDrawingUsage[]
+
+  @@unique([drawingId, revisionCode])
+}
+
+// Sahada kullanılan revizyon ≠ onaylı revizyon kontrolü (madde 21)
+model ElementDrawingUsage {
+  id                 String           @id @default(cuid())
+  elementId          String
+  element            StructureElement @relation(fields: [elementId], references: [id])
+  drawingId          String
+  drawing            Drawing          @relation(fields: [drawingId], references: [id])
+  siteUsedRevisionId String
+  siteUsedRevision   DrawingRevision  @relation(fields: [siteUsedRevisionId], references: [id])
+
+  @@unique([elementId, drawingId])
+}
+
+enum RFIStatus {
+  TASLAK
+  GONDERILDI
+  CEVAP_BEKLENIYOR
+  CEVAPLANDI
+  KAPATILDI
+}
+
+enum Priority {
+  DUSUK
+  ORTA
+  YUKSEK
+  KRITIK
+}
+
+model RFI {
+  id                String    @id @default(cuid())
+  rfiNumber         String    @unique
+  date              DateTime
+  structureId       String
+  structure         Structure @relation(fields: [structureId], references: [id])
+  elementId         String?
+  element           StructureElement? @relation(fields: [elementId], references: [id])
+  subject           String
+  description       String?
+  priority          Priority  @default(ORTA)
+  responsibleUserId String?
+  submittedDate     DateTime?
+  answeredDate      DateTime?
+  status            RFIStatus @default(TASLAK)
+
+  affectedActivities RFIAffectedActivity[]
+
+  @@index([structureId])
+  @@index([status])
+}
+
+model RFIAffectedActivity {
+  id         String   @id @default(cuid())
+  rfiId      String
+  rfi        RFI      @relation(fields: [rfiId], references: [id])
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id])
+
+  @@unique([rfiId, activityId])
+}
+
+// ─────────────────────────────────────────────
+// ITP / KONTROL / NCR / PROBLEM
+// ─────────────────────────────────────────────
+
+enum CheckpointType {
+  HOLD_POINT
+  WITNESS_POINT
+  REVIEW
+  INSPECTION
+}
+
+model ITPTemplate {
+  id          String        @id @default(cuid())
+  elementType ElementType   @unique
+  name        String
+  checkpoints ITPCheckpoint[]
+}
+
+model ITPCheckpoint {
+  id             String         @id @default(cuid())
+  templateId     String
+  template       ITPTemplate    @relation(fields: [templateId], references: [id])
+  sequenceOrder  Int
+  name           String
+  checkpointType CheckpointType
+
+  inspections Inspection[]
+
+  @@unique([templateId, sequenceOrder])
+}
+
+enum InspectionResult {
+  BEKLIYOR
+  GECTI
+  KALDI
+  SARTLI_GECTI
+}
+
+model Inspection {
+  id            String           @id @default(cuid())
+  checkpointId  String
+  checkpoint    ITPCheckpoint    @relation(fields: [checkpointId], references: [id])
+  elementId     String
+  element       StructureElement @relation(fields: [elementId], references: [id])
+  activityId    String?
+  activity      Activity?        @relation(fields: [activityId], references: [id])
+  result        InspectionResult @default(BEKLIYOR)
+  inspectedById String?
+  inspectedBy   User?            @relation("Inspector", fields: [inspectedById], references: [id])
+  inspectedAt   DateTime?
+  notes         String?
+
+  @@index([elementId])
+  @@index([result])
+}
+
+enum NCRStatus {
+  ACIK
+  DUZELTME_YAPILIYOR
+  KAPATILDI
+}
+
+// Madde 7: NCR'ın işe etkisi global "uyarı" değil, NCR bazında belirlenir.
+enum NCRImpact {
+  BILGILENDIRME // kayıt amaçlı, iş akışını etkilemez
+  UYARI         // iş devam eder, ekranlarda uyarı gösterilir
+  BLOKAJ        // ilgili eleman/aktivite bloke edilir, tamamlanamaz
+}
+
+model NCR {
+  id                 String    @id @default(cuid())
+  ncrNumber          String    @unique
+  structureId        String
+  structure          Structure @relation(fields: [structureId], references: [id])
+  elementId          String?
+  element            StructureElement? @relation(fields: [elementId], references: [id])
+  date               DateTime
+  problemDescription String
+  responsibleUserId  String?
+  correctiveAction   String?
+  dueDate            DateTime?
+  status             NCRStatus @default(ACIK)
+  impact             NCRImpact @default(UYARI)
+  closedDate         DateTime?
+
+  @@index([structureId])
+  @@index([status])
+}
+
+enum IssueSeverity {
+  DUSUK
+  ORTA
+  YUKSEK
+}
+
+enum IssueStatus {
+  ACIK
+  COZULDU
+}
+
+// Hafif saha problemi kaydı — NCR'dan ayrı (tasarım dokümanı Varsayımlar)
+model Issue {
+  id              String        @id @default(cuid())
+  entityType      String // "Structure" | "StructureElement" | "Pile" | "ConcretePour" | "Segment"
+  entityId        String
+  title           String
+  description     String?
+  severity        IssueSeverity @default(ORTA)
+  status          IssueStatus   @default(ACIK)
+  reportedById    String
+  reportedBy      User          @relation(fields: [reportedById], references: [id])
+  reportedAt      DateTime      @default(now())
+  resolutionNotes String?
+
+  @@index([entityType, entityId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────
+// EK DOSYA / AUDIT LOG
+// ─────────────────────────────────────────────
+
+enum FileType {
+  FOTOGRAF
+  PDF
+  EXCEL
+  DIGER
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  entityType   String
+  entityId     String
+  fileType     FileType
+  fileName     String
+  filePath     String
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  uploadedAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  entityType  String
+  entityId    String
+  fieldName   String
+  oldValue    String?
+  newValue    String?
+  changedById String
+  changedBy   User     @relation(fields: [changedById], references: [id])
+  changedAt   DateTime @default(now())
+  reason      String?
+
+  @@index([entityType, entityId])
+  @@index([changedAt])
+}
