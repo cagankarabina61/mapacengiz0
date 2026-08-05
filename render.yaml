@@ -2,16 +2,22 @@
 # Kurulum: Render'da "New +" → "Blueprint" → bu repoyu seç.
 # (Daha önce elle oluşturulmuş web service/Postgres varsa, karışıklık olmaması
 # için önce onları silip Blueprint'ten sıfırdan kurmanız önerilir.)
+#
+# ÜCRETSİZ PLAN KISITI: Render'ın free planı kalıcı disk ve preDeployCommand
+# desteklemiyor. Bu yüzden:
+#   - migration + seed, startCommand'a taşındı (her başlangıçta güvenle tekrar
+#     çalışır — seed.ts tamamen upsert tabanlıdır/idempotent)
+#   - disk bloğu kaldırıldı: /uploads klasörüne yüklenen belgeler/fotoğraflar
+#     her deploy'da veya servis yeniden başladığında SİLİNİR. Ücretsiz planda
+#     kalıcı dosya depolama yok — ileride gerekirse ücretli plana geçilip
+#     disk eklenebilir veya dosya depolama S3/Cloudflare R2'ye taşınabilir.
 services:
   - type: web
     name: mapacengiz
     runtime: node
     plan: free
     buildCommand: npm install --production=false && npm run build
-    startCommand: npm run start
-    # Migration + seed her deploy'da güvenle tekrar çalışır — seed.ts tamamen
-    # upsert tabanlıdır (idempotent), veriyi tekrarlamaz veya bozmaz.
-    preDeployCommand: npx prisma migrate deploy && npx prisma db seed
+    startCommand: npx prisma migrate deploy && npx prisma db seed && npm run start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
@@ -24,10 +30,6 @@ services:
         sync: false
       - key: AUTH_TRUST_HOST
         value: "true"
-    disk:
-      name: uploads
-      mountPath: /opt/render/project/src/uploads
-      sizeGB: 1
 
 databases:
   - name: mapacengiz-db
