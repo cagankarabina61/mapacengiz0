@@ -1,4 +1,5 @@
-import { requireSession, signOut } from "@/lib/auth";
+import Link from "next/link";
+import { requireSession } from "@/lib/auth";
 import { ROLE_LABELS } from "@/lib/labels";
 import { NAV, MOBILE_NAV } from "@/components/nav-items";
 import { NavLink } from "@/components/nav-link";
@@ -11,11 +12,6 @@ import { CurrentPageTitle } from "@/components/current-page-title";
 // (components/nav-items.ts) gelir; mobil ve masaüstü ayrışamaz.
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
-
-  async function cikis() {
-    "use server";
-    await signOut({ redirectTo: "/giris" });
-  }
 
   return (
     <div className="flex-1 flex">
@@ -45,14 +41,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <p className="font-medium text-slate-100">{session.user.name}</p>
             <p className="text-slate-400">{ROLE_LABELS[session.user.role]}</p>
           </div>
-          <form action={cikis}>
-            <button
-              type="submit"
-              className="text-slate-400 hover:text-white transition-colors duration-150"
-            >
-              Çıkış Yap
-            </button>
-          </form>
+          <Link
+            href="/giris?degistir=1"
+            className="text-slate-400 hover:text-white transition-colors duration-150"
+          >
+            Kullanıcıyı değiştir
+          </Link>
         </div>
       </aside>
 
@@ -62,18 +56,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <NavDrawer
             userName={session.user.name}
             roleLabel={ROLE_LABELS[session.user.role]}
-            signOutAction={cikis}
             searchForm={<SearchForm />}
           />
           <CurrentPageTitle />
-          <form action={cikis} className="ml-auto">
-            <button
-              type="submit"
-              className="inline-flex items-center min-h-11 text-xs text-slate-300 underline"
-            >
-              Çıkış
-            </button>
-          </form>
+          <Link
+            href="/giris?degistir=1"
+            className="ml-auto inline-flex items-center min-h-11 text-xs text-slate-300 underline"
+          >
+            {session.user.name}
+          </Link>
         </header>
 
         <main className="flex-1 p-4 pb-24 md:pb-4 max-w-6xl lg:max-w-7xl w-full mx-auto">

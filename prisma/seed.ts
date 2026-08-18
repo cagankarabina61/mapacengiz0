@@ -13,6 +13,7 @@
 // Tümü idempotent upsert — mevcut kayıtların üzerine yazmaz.
 import { PrismaClient, RoleName, PourTargetType, ElementType, CheckpointType } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "node:crypto";
 
 const prisma = new PrismaClient();
 
@@ -37,22 +38,14 @@ async function main() {
   }
 
   if (eksikKullanicilar.length > 0) {
-    // Başlangıç şifresi ortam değişkeninden gelir; kodda sabit şifre tutulmaz
-    // (depo herkese açık olabilir). Production'da tanımsızsa kullanıcı
-    // OLUŞTURULMAZ — varsayılan şifreyle açık kapı bırakmaktansa uyarı verilir.
-    const seedPassword = process.env.SEED_PASSWORD;
-    if (!seedPassword && process.env.NODE_ENV === "production") {
-      console.warn(
-        `UYARI: ${eksikKullanicilar.length} kullanıcı oluşturulmadı — SEED_PASSWORD tanımlı değil.\n` +
-          "Render panelinden SEED_PASSWORD ortam değişkenini girip yeniden deploy edin."
-      );
-    } else {
-      const passwordHash = await bcrypt.hash(seedPassword ?? "santiye123", 10);
-      for (const u of eksikKullanicilar) {
-        await prisma.user.create({ data: { ...u, passwordHash } });
-      }
-      console.log(`${eksikKullanicilar.length} kullanıcı oluşturuldu.`);
+    // Şifreli giriş kaldırıldı; kullanıcılar "Kim kullanıyor?" ekranından
+    // seçiliyor. passwordHash sütunu şemada zorunlu olduğu için doldurulur
+    // ama hiçbir yerde doğrulanmaz — giriş akışı yok.
+    const kullanilmayanHash = await bcrypt.hash(randomUUID(), 10);
+    for (const u of eksikKullanicilar) {
+      await prisma.user.create({ data: { ...u, passwordHash: kullanilmayanHash } });
     }
+    console.log(`${eksikKullanicilar.length} kullanıcı oluşturuldu.`);
   }
 
   // ── Rol izinleri (madde 39-40) ───────────────────────

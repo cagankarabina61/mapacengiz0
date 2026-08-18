@@ -26,15 +26,11 @@ services:
         fromDatabase:
           name: mapacengiz-db
           property: connectionString
-      - key: AUTH_SECRET
-        sync: false
-      # Demo kullanıcıların İLK şifresi. Render panelinden elle girilir; kodda
-      # sabit şifre tutulmaz. Kullanıcı şifresini değiştirdikten sonra seed
-      # tekrar çalışsa bile üzerine yazmaz (upsert update: {}).
-      - key: SEED_PASSWORD
-        sync: false
-      - key: AUTH_TRUST_HOST
-        value: "true"
+      # NOT: Şifreli giriş kaldırıldı (2026-08-18 kullanıcı kararı).
+      # AUTH_SECRET / AUTH_TRUST_HOST / SEED_PASSWORD artık GEREKMİYOR.
+      # Kullanıcı, açılışta "Kim kullanıyor?" ekranından adını seçer; seçim
+      # çerezde saklanır. Bu kimlik doğrulama değildir — site adresini bilen
+      # herkes veri girebilir/silebilir.
 
 databases:
   - name: mapacengiz-db

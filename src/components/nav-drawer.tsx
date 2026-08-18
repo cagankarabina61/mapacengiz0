@@ -7,6 +7,7 @@
 // Çıkış server action'ı prop olarak geçer — Server Action'lar RSC sınırından
 // serileştirilebilir, bu yüzden istemci bileşeninde <form action={...}> çalışır.
 import { useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Sheet } from "@/components/sheet";
 import { NavLink } from "@/components/nav-link";
 import { NAV } from "@/components/nav-items";
@@ -14,12 +15,10 @@ import { NAV } from "@/components/nav-items";
 export function NavDrawer({
   userName,
   roleLabel,
-  signOutAction,
   searchForm,
 }: {
   userName: string;
   roleLabel: string;
-  signOutAction: () => Promise<void>;
   /** Sunucuda render edilmiş SearchForm. */
   searchForm: ReactNode;
 }) {
@@ -66,14 +65,13 @@ export function NavDrawer({
             <p className="font-medium">{userName}</p>
             <p className="text-slate-400">{roleLabel}</p>
           </div>
-          <form action={signOutAction}>
-            <button
-              type="submit"
-              className="inline-flex items-center min-h-11 text-slate-300 hover:text-white underline"
-            >
-              Çıkış Yap
-            </button>
-          </form>
+          <Link
+            href="/giris?degistir=1"
+            onClick={close}
+            className="inline-flex items-center min-h-11 text-slate-300 hover:text-white underline"
+          >
+            Kullanıcıyı değiştir
+          </Link>
         </div>
       </Sheet>
     </>
