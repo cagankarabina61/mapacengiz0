@@ -26,25 +26,33 @@ async function main() {
     { name: "Survey", email: "survey@santiye.local", role: "SURVEY" },
     { name: "İzleyici", email: "izleyici@santiye.local", role: "IZLEYICI" },
   ];
-  // Başlangıç şifresi ortam değişkeninden gelir. Kodda sabit şifre tutulmaz:
-  // seed her deploy'da çalışıyor ve depo herkese açık olabilir.
-  // Yerelde SEED_PASSWORD tanımlı değilse geliştirme şifresi kullanılır;
-  // production'da tanımsızsa seed durur — açık kapı bırakmaktansa deploy patlasın.
-  const seedPassword = process.env.SEED_PASSWORD;
-  if (!seedPassword && process.env.NODE_ENV === "production") {
-    throw new Error(
-      "SEED_PASSWORD tanımlı değil. Production'da varsayılan şifreyle kullanıcı oluşturulmaz."
-    );
-  }
-  const passwordHash = await bcrypt.hash(seedPassword ?? "santiye123", 10);
+  // Kullanıcı oluşturma YALNIZCA veritabanı boşken çalışır. Kullanıcılar zaten
+  // varsa hiç dokunulmaz — seed her container başlangıcında çalıştığı için
+  // aksi hâlde çalışan bir kurulumu bozma riski olurdu.
+  const eksikKullanicilar: typeof users = [];
   for (const u of users) {
-    // update: {} → mevcut kullanıcının şifresi ASLA ezilmez. Kullanıcı şifresini
-    // değiştirdikten sonra seed tekrar çalışsa bile eski şifreye dönmez.
-    await prisma.user.upsert({
-      where: { email: u.email },
-      update: {},
-      create: { ...u, passwordHash },
-    });
+    if (!(await prisma.user.findUnique({ where: { email: u.email } }))) {
+      eksikKullanicilar.push(u);
+    }
+  }
+
+  if (eksikKullanicilar.length > 0) {
+    // Başlangıç şifresi ortam değişkeninden gelir; kodda sabit şifre tutulmaz
+    // (depo herkese açık olabilir). Production'da tanımsızsa kullanıcı
+    // OLUŞTURULMAZ — varsayılan şifreyle açık kapı bırakmaktansa uyarı verilir.
+    const seedPassword = process.env.SEED_PASSWORD;
+    if (!seedPassword && process.env.NODE_ENV === "production") {
+      console.warn(
+        `UYARI: ${eksikKullanicilar.length} kullanıcı oluşturulmadı — SEED_PASSWORD tanımlı değil.\n` +
+          "Render panelinden SEED_PASSWORD ortam değişkenini girip yeniden deploy edin."
+      );
+    } else {
+      const passwordHash = await bcrypt.hash(seedPassword ?? "santiye123", 10);
+      for (const u of eksikKullanicilar) {
+        await prisma.user.create({ data: { ...u, passwordHash } });
+      }
+      console.log(`${eksikKullanicilar.length} kullanıcı oluşturuldu.`);
+    }
   }
 
   // ── Rol izinleri (madde 39-40) ───────────────────────
