@@ -144,7 +144,7 @@ export default async function CizimlerPage() {
                     ))}
                     {d.revisions.length === 0 && (
                       <tr>
-                        <td colSpan={4} className="py-2 px-2 text-xs text-gray-400">
+                        <td colSpan={4} className="py-2 px-2 text-xs text-slate-500">
                           Henüz revizyon yok.
                         </td>
                       </tr>

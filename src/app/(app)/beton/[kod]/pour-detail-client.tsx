@@ -8,7 +8,7 @@ import {
   overrideResourceConflict,
 } from "@/app/actions/pours";
 import type { ActionResult } from "@/app/actions/piles";
-import { inputClass } from "@/components/ui";
+import { buttonPrimary, buttonSuccess, inputClass } from "@/components/ui";
 
 export interface ChecklistItemView {
   id: string;
@@ -193,7 +193,7 @@ export function TransitionPanel({
           onClick={() => go("BETON_DOKULUYOR")}
           disabled={pending || !isReady}
           title={!isReady ? "Ön koşullar tamamlanmadan döküm başlatılamaz." : undefined}
-          className="px-4 py-2 rounded-md text-sm font-medium bg-blue-700 hover:bg-blue-800 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+          className={`${buttonPrimary}`}
         >
           Dökümü Başlat
         </button>
@@ -222,7 +222,7 @@ export function TransitionPanel({
           <button
             type="submit"
             disabled={pending}
-            className="px-4 py-2 rounded-md text-sm font-medium bg-green-700 hover:bg-green-800 text-white disabled:opacity-50"
+            className={`${buttonSuccess}`}
           >
             Dökümü Tamamla
           </button>

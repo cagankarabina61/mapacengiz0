@@ -1,5 +1,16 @@
-// Seed: roller/izinler, hazırlık kapısı kataloğu, aktivite/ITP şablonları,
-// demo kullanıcılar ve ÖRNEK VERİ (madde 68 — açıkça isSample=true işaretli).
+// Seed: YALNIZCA yapılandırma ve gerçek proje iskeleti yazar.
+//
+// ÖNEMLİ: Bu script HİÇBİR uydurma iş verisi üretmez (2026-08-18 kullanıcı kararı).
+// Daha önce SP-DEMO/VIA-11 örnek projesi (iş kalemleri, kazıklar, segmentler,
+// beton dökümleri, RFI, NCR, çizim) oluşturuluyordu; sahada gerçek sanılan
+// rastgele bilgi ürettiği için tamamen kaldırıldı. Buraya bir daha örnek
+// iş verisi EKLENMEMELİDİR — render.yaml her container başlangıcında
+// `prisma db seed` çalıştırır, yani eklenen her şey üretime geri döner.
+//
+// Yazdıkları: kullanıcılar, rol izinleri, beton hazırlık kapısı kataloğu,
+// aktivite/ITP şablonları, ekip-ekipman katalogu, varsayılan segment kapı
+// kuralı ve VIA-1…VIA-48 boş yapı iskeleti (onaylı PTE'den teyitli).
+// Tümü idempotent upsert — mevcut kayıtların üzerine yazmaz.
 import { PrismaClient, RoleName, PourTargetType, ElementType, CheckpointType } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
@@ -15,8 +26,20 @@ async function main() {
     { name: "Survey", email: "survey@santiye.local", role: "SURVEY" },
     { name: "İzleyici", email: "izleyici@santiye.local", role: "IZLEYICI" },
   ];
-  const passwordHash = await bcrypt.hash("santiye123", 10);
+  // Başlangıç şifresi ortam değişkeninden gelir. Kodda sabit şifre tutulmaz:
+  // seed her deploy'da çalışıyor ve depo herkese açık olabilir.
+  // Yerelde SEED_PASSWORD tanımlı değilse geliştirme şifresi kullanılır;
+  // production'da tanımsızsa seed durur — açık kapı bırakmaktansa deploy patlasın.
+  const seedPassword = process.env.SEED_PASSWORD;
+  if (!seedPassword && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "SEED_PASSWORD tanımlı değil. Production'da varsayılan şifreyle kullanıcı oluşturulmaz."
+    );
+  }
+  const passwordHash = await bcrypt.hash(seedPassword ?? "santiye123", 10);
   for (const u of users) {
+    // update: {} → mevcut kullanıcının şifresi ASLA ezilmez. Kullanıcı şifresini
+    // değiştirdikten sonra seed tekrar çalışsa bile eski şifreye dönmez.
     await prisma.user.upsert({
       where: { email: u.email },
       update: {},
@@ -55,6 +78,17 @@ async function main() {
     ["QAQC", "pileTest", ["update"]],
     ["SURVEY", "pourSurvey", ["update"]],
     ["SURVEY", "surveyRecord", ["create", "update"]],
+    // ── Not / elle dikkat kalemi (katmanlı düzenleme) ────
+    // İZLEYİCİ dışında herkes not yazabilir; YONETICI zaten koşulsuz geçer.
+    // Not silme yumuşaktır (deletedAt); sahiplik kuralı ayrıca canEditNote ile denetlenir.
+    ["TEKNIK_OFIS", "note", ["create", "update", "delete"]],
+    ["SAHA_MUHENDISI", "note", ["create", "update", "delete"]],
+    ["QAQC", "note", ["create", "update", "delete"]],
+    ["SURVEY", "note", ["create", "update", "delete"]],
+    ["TEKNIK_OFIS", "attentionItem", ["create", "update", "delete"]],
+    ["SAHA_MUHENDISI", "attentionItem", ["create", "update", "delete"]],
+    ["QAQC", "attentionItem", ["create", "update", "delete"]],
+    ["SURVEY", "attentionItem", ["create", "update", "delete"]],
   ];
   for (const [role, resource, actions] of perms) {
     for (const action of actions) {
@@ -225,331 +259,8 @@ async function main() {
         ],
         requireStrength: true,
         asymmetryThreshold: 2,
-        note: "ÖRNEK VERİ — proje Method Statement'ı ile doğrulanmalıdır",
+        note: "Varsayılan kural — proje Method Statement'ı ile doğrulanmalıdır",
       },
-    });
-  }
-
-  // ── ÖRNEK VERİ: proje + VIA-11 (madde 68) ────────────
-  const project = await prisma.project.upsert({
-    where: { code: "SP-DEMO" },
-    update: {},
-    create: {
-      code: "SP-DEMO",
-      name: "Sibiu–Pitești Otoyolu (ÖRNEK VERİ)",
-      country: "Romanya",
-      client: "ÖRNEK VERİ",
-      isSample: true,
-    },
-  });
-
-  const via11 = await prisma.structure.upsert({
-    where: { code: "VIA-11" },
-    // Gerçek projede VIA-11'de dengeli konsol yok (kullanıcı teyidi) — bayrak kapalı.
-    // Örnek segment verileri kayıtta kalabilir ama sekme bu bayrakla gizlenir (§44).
-    update: { hasBalancedCantilever: false },
-    create: {
-      projectId: project.id,
-      code: "VIA-11",
-      name: "Viyadük 11 (ÖRNEK VERİ)",
-      type: "VIYADUK",
-      isSample: true,
-      hasBalancedCantilever: false,
-    },
-  });
-
-  // Pierler P1..P6 + A1/A2
-  const elementCodes = [
-    ["VIA11-A1", "A1", "ABUTMENT"],
-    ["VIA11-P01", "P1", "PIER"],
-    ["VIA11-P02", "P2", "PIER"],
-    ["VIA11-P03", "P3", "PIER"],
-    ["VIA11-P04", "P4", "PIER"],
-    ["VIA11-P05", "P5", "PIER"],
-    ["VIA11-P06", "P6", "PIER"],
-    ["VIA11-A2", "A2", "ABUTMENT"],
-  ] as const;
-  let seqIdx = 0;
-  for (const [code, name, elementType] of elementCodes) {
-    await prisma.structureElement.upsert({
-      where: { code },
-      update: {},
-      create: {
-        structureId: via11.id,
-        code,
-        name,
-        elementType,
-        sequenceIndex: seqIdx++,
-        status: "PLANLANDI",
-      },
-    });
-  }
-
-  // P5 altı: Pile Cap + Pier Gövdesi + kazık grubu + 8 kazık
-  const p5 = await prisma.structureElement.findUniqueOrThrow({ where: { code: "VIA11-P05" } });
-  const p5pc = await prisma.structureElement.upsert({
-    where: { code: "VIA11-P05-PC" },
-    update: {},
-    create: {
-      structureId: via11.id,
-      parentId: p5.id,
-      code: "VIA11-P05-PC",
-      name: "P5 Pile Cap",
-      elementType: "PILE_CAP",
-      status: "DEVAM_EDIYOR",
-    },
-  });
-  await prisma.structureElement.upsert({
-    where: { code: "VIA11-P05-PIER" },
-    update: {},
-    create: {
-      structureId: via11.id,
-      parentId: p5.id,
-      code: "VIA11-P05-PIER",
-      name: "P5 Pier Gövdesi",
-      elementType: "PIER_GOVDESI",
-      status: "PLANLANDI",
-    },
-  });
-
-  const group = await prisma.pileGroup.findFirst({ where: { elementId: p5.id } })
-    ?? await prisma.pileGroup.create({
-      data: { elementId: p5.id, name: "P5 Kazık Grubu", designPileCount: 8 },
-    });
-
-  for (let i = 1; i <= 8; i++) {
-    const code = `VIA11-P05-PILE-${String(i).padStart(2, "0")}`;
-    const done = i <= 6;
-    await prisma.pile.upsert({
-      where: { code },
-      update: {},
-      create: {
-        pileGroupId: group.id,
-        code,
-        diameterMm: 1500,
-        designLengthM: 25,
-        status: done ? (i <= 4 ? "KABUL_EDILDI" : "TEST_BEKLIYOR") : "DELGI_DEVAM_EDIYOR",
-        testStatus: i <= 4 ? "YAPILDI" : "BEKLIYOR",
-        acceptanceStatus: i <= 4 ? "KABUL" : "BEKLIYOR",
-        concreteClass: "C30/37",
-        plannedConcreteVolumeM3: 44.2,
-        ...(done ? { actualConcreteVolumeM3: 45.1, concreteDate: new Date("2026-07-20") } : {}),
-      },
-    });
-  }
-
-  // ── ÖRNEK: P5 Pier segmentleri (dengeli konsol) ──────
-  const p5pier = await prisma.structureElement.findUniqueOrThrow({
-    where: { code: "VIA11-P05-PIER" },
-  });
-  const done = {
-    rebarStatus: "TAMAMLANDI",
-    formworkStatus: "TAMAMLANDI",
-    tendonStatus: "TAMAMLANDI",
-    anchorageStatus: "TAMAMLANDI",
-    embeddedItemsStatus: "TAMAMLANDI",
-    inspectionStatus: "TAMAMLANDI",
-    concreteStatus: "TAMAMLANDI",
-    postTensioningStatus: "TAMAMLANDI",
-    surveyStatus: "TAMAMLANDI",
-    groutingStatus: "TAMAMLANDI",
-    status: "TAMAMLANDI",
-  } as const;
-  for (const side of ["SOL", "SAG"] as const) {
-    const completedUpTo = side === "SOL" ? 2 : 1;
-    for (let n = 0; n <= 3; n++) {
-      const code = `VIA11-P05-SEG-${side === "SOL" ? "L" : "R"}${n}`;
-      await prisma.balancedCantileverSegment.upsert({
-        where: { code },
-        update: {},
-        create: {
-          pierElementId: p5pier.id,
-          code,
-          segmentNumber: n,
-          side,
-          requiredConcreteStrengthMPa: 35,
-          ...(n <= completedUpTo
-            ? { ...done, achievedConcreteStrengthMPa: 38 }
-            : {}),
-        },
-      });
-    }
-  }
-
-  // ── ÖRNEK: P5 Pile Cap aktiviteleri (şablondan) + P6 RFI blokajı ──
-  const pcTemplate = await prisma.activityTemplate.findUnique({
-    where: { elementType: "PILE_CAP" },
-    include: { steps: { orderBy: { sequenceOrder: "asc" } } },
-  });
-  if (pcTemplate) {
-    const existing = await prisma.activity.findFirst({ where: { elementId: p5pc.id } });
-    if (!existing) {
-      // Ekip bazlı plan örneği (madde 2): sorumlu mühendis / ekip / QA-QC / Survey / ekipman
-      const [sahaUser, qaqcUser, surveyUser] = await Promise.all([
-        prisma.user.findUniqueOrThrow({ where: { email: "saha@santiye.local" } }),
-        prisma.user.findUniqueOrThrow({ where: { email: "qaqc@santiye.local" } }),
-        prisma.user.findUniqueOrThrow({ where: { email: "survey@santiye.local" } }),
-      ]);
-      const crewFor = async (activityType: string) => {
-        const code =
-          activityType === "REBAR"
-            ? "DE-A"
-            : activityType === "FORMWORK"
-              ? "KE-A"
-              : activityType === "SURVEY"
-                ? "SE-A"
-                : activityType === "CONCRETE"
-                  ? "BE-A"
-                  : null;
-        return code ? await prisma.resource.findUnique({ where: { code } }) : null;
-      };
-      const crane = await prisma.resource.findUnique({ where: { code: "V-01" } });
-
-      let prevId: string | null = null;
-      for (const step of pcTemplate.steps) {
-        const done = step.sequenceOrder <= 3; // Kazı/Grobeton/Donatı tamam
-        const crew = await crewFor(step.activityType);
-        const act = await prisma.activity.create({
-          data: {
-            elementId: p5pc.id,
-            activityType: step.activityType,
-            name: step.name,
-            sequenceIndex: step.sequenceOrder,
-            status: done ? "TAMAMLANDI" : step.sequenceOrder === 4 ? "DEVAM_EDIYOR" : "PLANLANDI",
-            plannedStart: new Date(Date.now() + (step.sequenceOrder - 4) * 86400e3),
-            plannedEnd: new Date(Date.now() + (step.sequenceOrder - 3) * 86400e3),
-            responsibleUserId: sahaUser.id,
-            qaqcUserId: qaqcUser.id,
-            surveyUserId: step.activityType === "SURVEY" ? surveyUser.id : null,
-            crewResourceId: crew?.id ?? null,
-            equipmentResourceId: step.activityType === "REBAR" ? (crane?.id ?? null) : null,
-          },
-        });
-        if (prevId) {
-          await prisma.dependency.upsert({
-            where: {
-              predecessorActivityId_successorActivityId: {
-                predecessorActivityId: prevId,
-                successorActivityId: act.id,
-              },
-            },
-            update: {},
-            create: { predecessorActivityId: prevId, successorActivityId: act.id },
-          });
-        }
-        prevId = act.id;
-      }
-    }
-  }
-
-  // P6 pier donatısı — açık RFI'ye bağlı (madde 23 örneği)
-  const p6 = await prisma.structureElement.findUniqueOrThrow({ where: { code: "VIA11-P06" } });
-  let p6Rebar = await prisma.activity.findFirst({
-    where: { elementId: p6.id, activityType: "REBAR" },
-  });
-  if (!p6Rebar) {
-    p6Rebar = await prisma.activity.create({
-      data: {
-        elementId: p6.id,
-        activityType: "REBAR",
-        name: "P6 Pier Donatısı",
-        status: "PLANLANDI",
-        plannedStart: new Date(Date.now() - 2 * 86400e3),
-        plannedEnd: new Date(Date.now() - 1 * 86400e3), // geçmiş → Gecikmiş örneği
-      },
-    });
-    const rfi = await prisma.rFI.upsert({
-      where: { rfiNumber: "RFI-024" },
-      update: {},
-      create: {
-        rfiNumber: "RFI-024",
-        date: new Date(),
-        structureId: via11.id,
-        elementId: p6.id,
-        subject: "P6 donatı bindirme boyu revizyonu",
-        priority: "YUKSEK",
-        status: "CEVAP_BEKLENIYOR",
-        submittedDate: new Date(Date.now() - 5 * 86400e3),
-      },
-    });
-    await prisma.rFIAffectedActivity.upsert({
-      where: { rfiId_activityId: { rfiId: rfi.id, activityId: p6Rebar.id } },
-      update: {},
-      create: { rfiId: rfi.id, activityId: p6Rebar.id },
-    });
-  }
-
-  // ── ÖRNEK: beton dökümleri (yarın, biri hazır değil + pompa çakışması) ──
-  const pump1 = await prisma.resource.findUniqueOrThrow({ where: { code: "P-01" } });
-  const crewA = await prisma.resource.findUniqueOrThrow({ where: { code: "BE-A" } });
-  const tomorrow = new Date();
-  tomorrow.setHours(0, 0, 0, 0);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const pourCount = await prisma.concretePour.count();
-  if (pourCount === 0) {
-    const templateItems = await prisma.checklistTemplateItem.findMany({
-      orderBy: { sequenceOrder: "asc" },
-    });
-    // Döküm 1: P5 Pile Cap — çoğu madde işaretli ama QA/QC eksik → "Hazır Değil"
-    const pour1 = await prisma.concretePour.create({
-      data: {
-        code: "POUR-2026-0001",
-        targetType: "STRUCTURE_ELEMENT",
-        structureElementId: p5pc.id,
-        plannedDate: tomorrow,
-        plannedTime: "07:00",
-        concreteClass: "C30/37",
-        plannedVolumeM3: 145,
-        pumpResourceId: pump1.id,
-        crewResourceId: crewA.id,
-        status: "PLANLANDI",
-        // 145 m³ ÷ (60 m³/sa × %70) = ~207 dk + 60 dk hazırlık/temizlik
-        estimatedDurationMin: 267,
-        responsibleUserId: (
-          await prisma.user.findUniqueOrThrow({ where: { email: "saha@santiye.local" } })
-        ).id,
-      },
-    });
-    const applicable1 = templateItems.filter((t) => t.appliesTo.includes("STRUCTURE_ELEMENT"));
-    await prisma.concretePourChecklistItem.createMany({
-      data: applicable1.map((t) => ({
-        pourId: pour1.id,
-        itemKey: t.itemKey,
-        label: t.label,
-        isChecked: !["QAQC_DONE", "ITP_RELEASED", "SURVEY_DONE"].includes(t.itemKey),
-      })),
-    });
-
-    // Döküm 2: Kazık 07 — aynı pompa, çakışan saat (madde 13 örneği)
-    const pile7 = await prisma.pile.findUniqueOrThrow({ where: { code: "VIA11-P05-PILE-07" } });
-    const pour2 = await prisma.concretePour.create({
-      data: {
-        code: "POUR-2026-0002",
-        targetType: "PILE",
-        pileId: pile7.id,
-        plannedDate: tomorrow,
-        plannedTime: "09:00",
-        concreteClass: "C30/37",
-        plannedVolumeM3: 44,
-        pumpResourceId: pump1.id,
-        crewResourceId: crewA.id,
-        status: "PLANLANDI",
-        qaqcStatus: "TAMAMLANDI",
-        surveyStatus: "TAMAMLANDI",
-        itpStatus: "TAMAMLANDI",
-        // 44 m³ ÷ (60 × %70) = ~63 dk + 60 dk → 07:00 dökümüyle KRİTİK çakışma üretir
-        estimatedDurationMin: 123,
-      },
-    });
-    const applicable2 = templateItems.filter((t) => t.appliesTo.includes("PILE"));
-    await prisma.concretePourChecklistItem.createMany({
-      data: applicable2.map((t) => ({
-        pourId: pour2.id,
-        itemKey: t.itemKey,
-        label: t.label,
-        isChecked: true, // tümü tamam → "Hazır" ama pompa çakışması uyarısı var
-      })),
     });
   }
 

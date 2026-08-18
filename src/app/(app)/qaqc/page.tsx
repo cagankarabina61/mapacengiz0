@@ -57,14 +57,14 @@ export default async function QaqcPage() {
                 <div>
                   <p className="font-semibold text-sm">
                     {el.structure.code} {el.name}
-                    <span className="text-xs text-gray-400 font-normal ml-2">({el.code})</span>
+                    <span className="text-xs text-slate-500 font-normal ml-2">({el.code})</span>
                   </p>
                   <p className="text-xs text-gray-500">{template.name}</p>
                 </div>
                 {holdPointsPending > 0 ? (
                   <Badge tone="red">{holdPointsPending} Hold Point serbest değil</Badge>
                 ) : (
-                  <Badge tone="green">Tüm Hold Point'ler serbest</Badge>
+                  <Badge tone="green">Tüm Hold Point&apos;ler serbest</Badge>
                 )}
               </div>
 
@@ -86,7 +86,7 @@ export default async function QaqcPage() {
                       const result = insp?.result ?? "BEKLIYOR";
                       return (
                         <tr key={cp.id}>
-                          <td className="py-2 px-2 text-gray-400">{cp.sequenceOrder}</td>
+                          <td className="py-2 px-2 text-slate-500">{cp.sequenceOrder}</td>
                           <td className="py-2 px-2 font-medium">{cp.name}</td>
                           <td className="py-2 px-2">
                             <Badge tone={cp.checkpointType === "HOLD_POINT" ? "red" : "gray"}>

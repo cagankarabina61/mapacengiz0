@@ -1,7 +1,7 @@
 // Global arama (madde 44): tek kutudan yapı/eleman/kazık/beton/RFI/NCR/çizim.
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { Card, PageTitle, EmptyState, Badge } from "@/components/ui";
+import { Badge, Card, EmptyState, PageTitle, buttonPrimary } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -143,7 +143,7 @@ export default async function AraPage({
           />
           <button
             type="submit"
-            className="px-4 py-2 rounded-md text-sm font-medium bg-blue-700 hover:bg-blue-800 text-white"
+            className={`${buttonPrimary}`}
           >
             Ara
           </button>

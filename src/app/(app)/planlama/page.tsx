@@ -9,7 +9,7 @@ import {
   ganttSpan,
   type PlanItem,
 } from "@/lib/services/planning";
-import { Card, PageTitle, EmptyState, StatusBadge, Badge } from "@/components/ui";
+import { Card, PageTitle, EmptyState, StatusBadge, Badge, Chip, Chips, ChipDivider } from "@/components/ui";
 import { ACTIVITY_STATUS_LABELS, POUR_STATUS_LABELS, UNSPECIFIED, label } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +49,90 @@ function TeamLine({ item }: { item: PlanItem }) {
   );
 }
 
+/**
+ * Telefon için gün bazlı ajanda — Gantt'ın mobil karşılığı.
+ * Aynı PlanItem verisini kullanır; ek sorgu yoktur.
+ */
+function MobileAgenda({ items, days }: { items: PlanItem[]; days: Date[] }) {
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+
+  // Bir iş, başlangıç–bitiş aralığındaki her güne düşer.
+  const gunler = days.map((d) => ({
+    tarih: d,
+    isler: items.filter((i) => {
+      const s = i.plannedStart;
+      const e = i.plannedEnd ?? i.plannedStart;
+      if (!s || !e) return false;
+      return (
+        (s <= d && e >= d) || sameDay(s, d) || sameDay(e, d)
+      );
+    }),
+  }));
+
+  const tarihsiz = items.filter((i) => !i.plannedStart);
+  const dolu = gunler.filter((g) => g.isler.length > 0);
+
+  if (dolu.length === 0 && tarihsiz.length === 0) {
+    return <EmptyState message="Bu aralıkta planlanmış iş yok." />;
+  }
+
+  return (
+    <div className="space-y-3">
+      {dolu.map((g) => (
+        <div key={g.tarih.toISOString()}>
+          <p
+            className={`text-xs font-semibold border-b border-gray-200 pb-1 mb-1 ${
+              g.tarih.getDay() === 0 || g.tarih.getDay() === 6
+                ? "text-red-500"
+                : "text-gray-700"
+            }`}
+          >
+            {g.tarih.toLocaleDateString("tr-TR", {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+            })}
+            <span className="font-normal text-slate-500"> · {g.isler.length} iş</span>
+          </p>
+          <ul className="divide-y divide-gray-100">
+            {g.isler.map((item) => (
+              <li key={`${item.kind}-${item.id}`} className="py-2 flex items-start gap-2 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <Link href={itemHref(item)} className="text-sm font-medium hover:underline">
+                    {item.structureCode} {item.elementName} — {item.workName}
+                  </Link>
+                  <TeamLine item={item} />
+                </div>
+                {item.isDelayed && <Badge tone="red">{item.delayDays} gün</Badge>}
+                <StatusBadge status={item.status} labelText={statusLabel(item)} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {tarihsiz.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 border-b border-gray-200 pb-1 mb-1">
+            Tarih girilmemiş · {tarihsiz.length} iş
+          </p>
+          <ul className="divide-y divide-gray-100">
+            {tarihsiz.map((item) => (
+              <li key={`${item.kind}-${item.id}`} className="py-2">
+                <Link href={itemHref(item)} className="text-sm font-medium hover:underline">
+                  {item.structureCode} {item.elementName} — {item.workName}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default async function PlanlamaPage({
   searchParams,
 }: {
@@ -66,35 +150,27 @@ export default async function PlanlamaPage({
     <div className="space-y-4">
       <PageTitle>Planlama</PageTitle>
 
-      <div className="flex gap-2 flex-wrap">
+      <Chips>
         {VIEWS.map((v) => (
-          <Link
+          <Chip
             key={v.key}
             href={`/planlama?gorunum=${v.key}&mod=${mode.key}`}
-            className={`px-3 py-2 rounded-md text-sm font-medium ${
-              v.key === view.key
-                ? "bg-blue-700 text-white"
-                : "bg-white border border-gray-300 text-gray-700"
-            }`}
+            active={v.key === view.key}
           >
             {v.label}
-          </Link>
+          </Chip>
         ))}
-        <span className="w-px bg-gray-300 mx-1" />
+        <ChipDivider />
         {MODES.map((m) => (
-          <Link
+          <Chip
             key={m.key}
             href={`/planlama?gorunum=${view.key}&mod=${m.key}`}
-            className={`px-3 py-2 rounded-md text-sm font-medium ${
-              m.key === mode.key
-                ? "bg-slate-800 text-white"
-                : "bg-white border border-gray-300 text-gray-700"
-            }`}
+            active={m.key === mode.key}
           >
             {m.label}
-          </Link>
+          </Chip>
         ))}
-      </div>
+      </Chips>
 
       <p className="text-xs text-gray-500">
         Bu görünümler ayrı bir program tablosundan değil, doğrudan iş kalemleri ve beton döküm
@@ -107,14 +183,24 @@ export default async function PlanlamaPage({
         </Card>
       ) : mode.key === "gantt" ? (
         <Card title={`${view.label} — Gantt (${items.length} iş)`}>
-          <div className="overflow-x-auto">
-            <div style={{ minWidth: `${280 + view.days * 44}px` }}>
+          {/* Telefonda Gantt render EDİLMEZ: 3 haftalık görünüm 1204px genişliğinde
+              ve 280px etiket sütunu 375px ekranın %90'ını yer. Yerine gün bazlı
+              ajanda listesi — aynı getPlanItems verisi, yeni sorgu yok. */}
+          <div className="md:hidden">
+            <MobileAgenda items={items} days={days} />
+          </div>
+
+          {/* Tablette daralt, masaüstünde bugünkü yoğunluğu koru:
+              md → 160px etiket + 32px gün (3 hafta ≈ 832px, tablete sığar)
+              lg → 280px etiket + 44px gün (bugünküyle birebir aynı) */}
+          <div className="hidden md:block overflow-x-auto [--gantt-label:10rem] [--gantt-day:2rem] lg:[--gantt-label:17.5rem] lg:[--gantt-day:2.75rem]">
+            <div className="w-max min-w-full">
               {/* Gün başlıkları */}
               <div
                 className="grid text-[10px] text-gray-500 border-b border-gray-300 pb-1 mb-1"
-                style={{ gridTemplateColumns: `280px repeat(${view.days}, 1fr)` }}
+                style={{ gridTemplateColumns: `var(--gantt-label) repeat(${view.days}, minmax(var(--gantt-day), 1fr))` }}
               >
-                <div className="font-semibold text-gray-600">İş</div>
+                <div className="font-semibold text-gray-600 sticky left-0 bg-white z-10">İş</div>
                 {days.map((d, i) => (
                   <div
                     key={i}
@@ -131,9 +217,10 @@ export default async function PlanlamaPage({
                   <div
                     key={`${item.kind}-${item.id}`}
                     className="grid items-center py-0.5 hover:bg-gray-50"
-                    style={{ gridTemplateColumns: `280px repeat(${view.days}, 1fr)` }}
+                    style={{ gridTemplateColumns: `var(--gantt-label) repeat(${view.days}, minmax(var(--gantt-day), 1fr))` }}
                   >
-                    <div className="pr-2 min-w-0">
+                    {/* Yapışkan etiket sütunu: sağa kaydırırken iş adı görünür kalır. */}
+                    <div className="pr-2 min-w-0 sticky left-0 bg-white z-10">
                       <Link href={itemHref(item)} className="text-xs font-medium hover:underline">
                         {item.structureCode} {item.elementName}
                       </Link>
@@ -166,7 +253,7 @@ export default async function PlanlamaPage({
                     ) : (
                       <div
                         style={{ gridColumn: `span ${view.days}` }}
-                        className="text-[10px] text-gray-400 pl-1"
+                        className="text-[10px] text-slate-500 pl-1"
                       >
                         Tarih girilmemiş
                       </div>

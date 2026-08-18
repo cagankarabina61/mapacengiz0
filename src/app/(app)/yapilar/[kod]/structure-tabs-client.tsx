@@ -18,7 +18,7 @@ import {
 import { updateSegmentPlan, createSegments } from "@/app/actions/segments";
 import type { ActionResult } from "@/app/actions/piles";
 import type { PierSetupPreview } from "@/lib/logic/pier-setup";
-import { Field, inputClass, Badge } from "@/components/ui";
+import { Badge, Field, buttonDanger, buttonNeutral, buttonPrimary, buttonWarning, inputClass } from "@/components/ui";
 import { STRUCTURE_TYPE_LABELS } from "@/lib/labels";
 
 function Result({ result }: { result: ActionResult | null }) {
@@ -142,7 +142,7 @@ export function StructureDangerZone({
           <button
             type="submit"
             disabled={pending}
-            className="px-4 py-2 rounded-md text-sm font-medium bg-slate-700 hover:bg-slate-800 text-white disabled:opacity-50"
+            className={`${buttonNeutral}`}
           >
             Arşivden Çıkar
           </button>
@@ -167,7 +167,7 @@ export function StructureDangerZone({
         <button
           type="submit"
           disabled={pending}
-          className="px-4 py-2 rounded-md text-sm font-medium bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
+          className={`${buttonWarning}`}
         >
           Arşivle (veriler korunur)
         </button>
@@ -183,7 +183,7 @@ export function StructureDangerZone({
               ? "Bu yapıya bağlı kayıt yok, güvenle silinebilir."
               : "Bağlı kayıtları olan yapı silinemez — arşivleyin."
           }
-          className="px-4 py-2 rounded-md text-sm font-medium bg-red-700 hover:bg-red-800 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+          className={`${buttonDanger}`}
         >
           Kalıcı Sil
         </button>
@@ -232,7 +232,7 @@ export function AddElementForm({ structureId }: { structureId: string }) {
       <button
         type="submit"
         disabled={pending}
-        className="px-4 py-2 rounded-md text-sm font-medium bg-blue-700 hover:bg-blue-800 text-white disabled:opacity-50"
+        className={`${buttonPrimary}`}
       >
         {pending ? "Ekleniyor…" : "Ekle"}
       </button>
@@ -364,7 +364,7 @@ export function PierSetupForm({ structureId }: { structureId: string }) {
                     <tr key={i}>
                       <td className="py-1 px-2 text-gray-500 w-40">{r.category}</td>
                       <td className="py-1 px-2 font-medium">{r.name}</td>
-                      <td className="py-1 px-2 text-gray-400">{r.code}</td>
+                      <td className="py-1 px-2 text-slate-500">{r.code}</td>
                       <td className="py-1 px-2 text-gray-500">{r.detail}</td>
                     </tr>
                   ))}
@@ -660,7 +660,7 @@ export function AddSegmentsForm({ piers }: { piers: { id: string; name: string }
       <button
         type="submit"
         disabled={pending}
-        className="px-4 py-2 rounded-md text-sm font-medium bg-blue-700 hover:bg-blue-800 text-white disabled:opacity-50"
+        className={`${buttonPrimary}`}
       >
         {pending ? "Ekleniyor…" : "Segment Ekle"}
       </button>

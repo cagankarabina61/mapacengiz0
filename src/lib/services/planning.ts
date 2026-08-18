@@ -26,6 +26,8 @@ export interface PlanItem {
   responsibleName: string | null;
   /** Sorumlu ekip adı. */
   crewName: string | null;
+  /** Ekip kaynağının id'si — hızlı düzenlemede seçili değeri göstermek için. */
+  crewResourceId: string | null;
   /** QA/QC sorumlusu. */
   qaqcName: string | null;
   /** Survey sorumlusu. */
@@ -126,6 +128,7 @@ export async function getPlanItems(start: Date, end: Date): Promise<PlanItem[]> 
       status: a.status,
       responsibleName: a.responsibleUser?.name ?? null,
       crewName: a.crewResource?.name ?? null,
+      crewResourceId: a.crewResourceId,
       qaqcName: a.qaqcUser?.name ?? null,
       surveyName: a.surveyUser?.name ?? null,
       equipmentName: a.equipmentResource?.name ?? null,
@@ -161,6 +164,7 @@ export async function getPlanItems(start: Date, end: Date): Promise<PlanItem[]> 
       status: p.status,
       responsibleName: p.responsibleUser?.name ?? null,
       crewName: p.crewResource?.name ?? null,
+      crewResourceId: p.crewResourceId,
       qaqcName: p.qaqcUserId ? (userNames.get(p.qaqcUserId) ?? null) : null,
       surveyName: p.surveyUserId ? (userNames.get(p.surveyUserId) ?? null) : null,
       equipmentName: p.pumpResource ? `${p.pumpResource.code} (Pompa)` : null,
@@ -190,6 +194,7 @@ export async function getPlanItems(start: Date, end: Date): Promise<PlanItem[]> 
       status: s.status,
       responsibleName: s.responsibleUser?.name ?? null,
       crewName: s.crewResource?.name ?? null,
+      crewResourceId: s.crewResourceId,
       qaqcName: null,
       surveyName: null,
       equipmentName: s.pumpResource ? `${s.pumpResource.code} (Pompa)` : null,

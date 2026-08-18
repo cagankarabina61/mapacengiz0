@@ -5,7 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { AKTIF } from "@/lib/archive";
-import { Card, PageTitle, StatusBadge, Badge, EmptyState } from "@/components/ui";
+import { Badge, Card, EmptyState, PageTitle, StatusBadge, buttonPrimary } from "@/components/ui";
 import {
   ELEMENT_STATUS_LABELS,
   ELEMENT_TYPE_LABELS,
@@ -224,7 +224,7 @@ async function ElemanlarTab({
                 <div>
                   <p className="font-semibold text-sm">
                     {el.name}{" "}
-                    <span className="text-xs text-gray-400 font-normal">({el.code})</span>
+                    <span className="text-xs text-slate-500 font-normal">({el.code})</span>
                     {el.archivedAt && (
                       <span className="ml-2">
                         <Badge tone="gray">Arşivli</Badge>
@@ -288,7 +288,7 @@ async function ElemanlarTab({
                             </span>
                           )}
                         </p>
-                        <p className="text-xs text-gray-400">{child.code}</p>
+                        <p className="text-xs text-slate-500">{child.code}</p>
                       </div>
                       <StatusBadge
                         status={child.status}
@@ -367,7 +367,7 @@ async function BetonTab({ structureCode }: { structureCode: string }) {
       <Card>
         <Link
           href={`/beton/yeni?yapi=${encodeURIComponent(structureCode)}`}
-          className="inline-block px-4 py-2 rounded-md text-sm font-medium bg-blue-700 hover:bg-blue-800 text-white"
+          className={`${buttonPrimary}`}
         >
           + Bu Yapıya Beton Dökümü
         </Link>
@@ -474,7 +474,7 @@ async function DengeliKonsolTab({ structureId }: { structureId: string }) {
                       {s.side === "SOL" ? "Sol" : s.side === "SAG" ? "Sağ" : "Tek"} S
                       {s.segmentNumber}
                     </span>
-                    <span className="text-xs text-gray-400">{s.code}</span>
+                    <span className="text-xs text-slate-500">{s.code}</span>
                     <StatusBadge
                       status={s.status}
                       labelText={label(SEGMENT_STATUS_LABELS, s.status)}

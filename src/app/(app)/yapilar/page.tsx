@@ -2,10 +2,25 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { AKTIF } from "@/lib/archive";
-import { Card, PageTitle, Table, StatusBadge, Badge, EmptyState } from "@/components/ui";
+import {
+  Card,
+  PageTitle,
+  Table,
+  StatusBadge,
+  Badge,
+  EmptyState,
+  Chip,
+  Chips,
+  inputClass,
+  buttonPrimary,
+} from "@/components/ui";
+import { SectionCard } from "@/components/section-card";
 import { STRUCTURE_TYPE_LABELS, label } from "@/lib/labels";
 import { compareStructureCodes } from "@/lib/logic/structure-codes";
 import { NewStructureForm } from "./structure-form";
+import { requireSession } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
+import { getSectionNotes } from "@/lib/services/notes";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +39,13 @@ export default async function YapilarPage({
   const { q, filtre } = await searchParams;
   const activeFilter = FILTERS.find((f) => f.key === filtre) ?? FILTERS[0];
   const query = (q ?? "").trim();
+
+  const session = await requireSession();
+  const viewer = { id: session.user.id, role: session.user.role };
+  const [canWriteNote, sectionNotes] = await Promise.all([
+    hasPermission(session.user.role, "note", "create"),
+    getSectionNotes(["yapilar.liste"], viewer),
+  ]);
 
   const where = {
     ...(activeFilter.key === "aktif" ? AKTIF : {}),
@@ -65,32 +87,32 @@ export default async function YapilarPage({
             name="q"
             defaultValue={query}
             placeholder="Yapı kodu veya adı ara…"
-            className="flex-1 min-w-48 border border-gray-300 rounded-md px-3 py-2 text-sm bg-white"
+            className={`${inputClass} flex-1 min-w-48`}
           />
           <input type="hidden" name="filtre" value={activeFilter.key} />
-          <button
-            type="submit"
-            className="px-4 py-2 rounded-md text-sm font-medium bg-slate-800 text-white"
-          >
+          <button type="submit" className={buttonPrimary}>
             Ara
           </button>
         </form>
-        <div className="flex gap-2 flex-wrap text-sm mt-2">
+        <Chips className="mt-2">
           {FILTERS.map((f) => (
-            <Link
+            <Chip
               key={f.key}
               href={`/yapilar?filtre=${f.key}${query ? `&q=${encodeURIComponent(query)}` : ""}`}
-              className={`px-2 py-1 rounded ${
-                f.key === activeFilter.key ? "bg-blue-700 text-white" : "bg-gray-100"
-              }`}
+              active={f.key === activeFilter.key}
             >
               {f.label}
-            </Link>
+            </Chip>
           ))}
-        </div>
+        </Chips>
       </Card>
 
-      <Card>
+      <SectionCard
+        sectionKey="yapilar.liste"
+        title={`Yapılar — ${activeFilter.label}`}
+        notes={sectionNotes.get("Section:yapilar.liste") ?? []}
+        canWriteNote={canWriteNote}
+      >
         {sorted.length === 0 ? (
           <EmptyState
             message={
@@ -109,9 +131,11 @@ export default async function YapilarPage({
                 return (
                   <tr key={s.id} className={`hover:bg-gray-50 ${s.archivedAt ? "opacity-60" : ""}`}>
                     <td className="py-2 px-2">
+                      {/* min-h-11: satır yüksekliğini fazla büyütmeden 44px
+                          dokunma hedefi (negatif margin ile telafi). */}
                       <Link
                         href={`/yapilar/${encodeURIComponent(s.code)}`}
-                        className="font-medium text-blue-700 hover:underline"
+                        className="inline-flex items-center min-h-11 -my-2 font-medium text-accent hover:underline"
                       >
                         {s.code}
                       </Link>
@@ -145,10 +169,10 @@ export default async function YapilarPage({
                 );
               })}
             </Table>
-            <p className="text-xs text-gray-400 mt-3">{sorted.length} yapı</p>
+            <p className="text-xs text-slate-500 mt-3">{sorted.length} yapı</p>
           </>
         )}
-      </Card>
+      </SectionCard>
     </div>
   );
 }

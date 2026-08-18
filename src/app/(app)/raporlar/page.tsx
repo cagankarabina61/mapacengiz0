@@ -1,6 +1,6 @@
 // Raporlar (madde 46): ekranda tablo + Excel indirme. Tek veri kaynağı: reports servisi.
 import Link from "next/link";
-import { Card, PageTitle, EmptyState, Table } from "@/components/ui";
+import { Card, EmptyState, PageTitle, Table, buttonSuccess } from "@/components/ui";
 import { REPORTS } from "@/lib/services/reports";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ export default async function RaporlarPage({
         actions={
           <a
             href={`/api/rapor/${selected}`}
-            className="inline-block px-4 py-2 rounded-md text-sm font-medium bg-green-700 hover:bg-green-800 text-white"
+            className={`${buttonSuccess}`}
           >
             Excel İndir
           </a>
@@ -61,7 +61,7 @@ export default async function RaporlarPage({
             ))}
           </Table>
         )}
-        <p className="text-xs text-gray-400 mt-3">{def.rows.length} kayıt</p>
+        <p className="text-xs text-slate-500 mt-3">{def.rows.length} kayıt</p>
       </Card>
     </div>
   );

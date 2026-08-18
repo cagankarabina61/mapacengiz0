@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { createStructure } from "@/app/actions/structures";
 import type { ActionResult } from "@/app/actions/piles";
-import { Field, inputClass } from "@/components/ui";
+import { Field, buttonPrimary, inputClass } from "@/components/ui";
 import { STRUCTURE_TYPE_LABELS } from "@/lib/labels";
 
 export function NewStructureForm() {
@@ -27,7 +27,7 @@ export function NewStructureForm() {
             setOpen((v) => !v);
             setResult(null);
           }}
-          className="px-4 py-2 rounded-md text-sm font-medium bg-blue-700 hover:bg-blue-800 text-white"
+          className={`${buttonPrimary}`}
         >
           {open ? "Vazgeç" : "+ Yeni Yapı"}
         </button>

@@ -1,17 +1,81 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────
+   Tasarım token'ları — şantiye ofisi için yoğun veri arayüzü.
+
+   İLKE: Renk burada BİLGİDİR, süs değil (madde 47). Yeşil=hazır,
+   Sarı=risk/bekliyor, Kırmızı=bloke/kritik, Mavi=planlandı.
+   Bu anlamlar korunur; token'lar yalnızca kontrastı ve
+   okunabilirliği iyileştirir. Her rozette yazılı etiket de vardır.
+   ───────────────────────────────────────────────────────── */
 :root {
-  --background: #f5f6f7;
-  --foreground: #1a1d21;
+  /* Yüzeyler */
+  --background: #eef1f5; /* sayfa zemini — kartların üzerinden kalkması için */
+  --surface: #ffffff; /* kart */
+  --surface-muted: #f8fafc; /* tablo başlığı, ikincil şerit */
+  --foreground: #0f172a;
+  --muted: #64748b; /* ikincil metin — #f8fafc üstünde 4.6:1 */
+  --border: #e2e8f0;
+
+  /* Marka */
+  --accent: #1d4ed8;
+  --accent-hover: #1e40af;
+  --accent-soft: #eff6ff;
+
+  /* Kenar menüsü */
+  --nav: #0f172a;
+  --nav-soft: #1e293b;
+  --nav-text: #cbd5e1;
+
+  /* Yükseklik — yoğun arayüzde gölge hafif olmalı, yoksa gürültü olur */
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --shadow-raised: 0 4px 12px -2px rgb(15 23 42 / 0.10), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+  --shadow-overlay: 0 20px 40px -12px rgb(15 23 42 / 0.28);
+
+  --radius: 0.625rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border-subtle: var(--border);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-nav: var(--nav);
+  --color-nav-soft: var(--nav-soft);
+  --color-nav-text: var(--nav-text);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+
+/* Sayılar ve tarihler sütun hâlinde hizalansın — tablo/sayaç okunabilirliği. */
+table,
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Klavye kullanıcısı için görünür odak — fare tıklamasında görünmez. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Hareketi azalt tercihi (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

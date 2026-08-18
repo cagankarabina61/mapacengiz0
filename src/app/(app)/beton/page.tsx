@@ -5,9 +5,13 @@ import { AKTIF } from "@/lib/archive";
 import { compareStructureCodes } from "@/lib/logic/structure-codes";
 import { dayRange } from "@/lib/services/dashboard";
 import { pourTargetLabel } from "@/lib/services/pours";
-import { Card, PageTitle, LinkButton, EmptyState, StatusBadge, Badge } from "@/components/ui";
+import { Card, PageTitle, LinkButton, EmptyState, StatusBadge, Badge, Chip, Chips } from "@/components/ui";
+import { SectionCard } from "@/components/section-card";
 import { POUR_STATUS_LABELS, UNSPECIFIED, label } from "@/lib/labels";
 import { evaluatePourReadiness } from "@/lib/logic/readiness";
+import { requireSession } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
+import { getSectionNotes } from "@/lib/services/notes";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +22,13 @@ export default async function BetonPage({
 }) {
   const { sekme, yapi } = await searchParams;
   const tab = sekme === "yarin" ? "yarin" : sekme === "tumu" ? "tumu" : "bugun";
+
+  const session = await requireSession();
+  const viewer = { id: session.user.id, role: session.user.role };
+  const [canWriteNote, sectionNotes] = await Promise.all([
+    hasPermission(session.user.role, "note", "create"),
+    getSectionNotes(["beton.liste"], viewer),
+  ]);
 
   const dateWhere =
     tab === "tumu"
@@ -72,49 +83,47 @@ export default async function BetonPage({
         Beton Döküm Programı{yapi ? ` — ${yapi}` : ""}
       </PageTitle>
 
-      <div className="flex gap-2">
+      <Chips>
         {[
           ["bugun", "Bugün"],
           ["yarin", "Yarın"],
           ["tumu", "Tümü"],
         ].map(([key, lbl]) => (
-          <Link
+          <Chip
             key={key}
             href={`/beton?sekme=${key}${yapi ? `&yapi=${encodeURIComponent(yapi)}` : ""}`}
-            className={`px-4 py-2 rounded-md text-sm font-medium ${
-              tab === key ? "bg-blue-700 text-white" : "bg-white border border-gray-300 text-gray-700"
-            }`}
+            active={tab === key}
           >
             {lbl}
-          </Link>
+          </Chip>
         ))}
-      </div>
+      </Chips>
 
       {/* Proje/VIA filtresi (§55) */}
       <Card>
-        <div className="flex gap-2 flex-wrap text-sm">
-          <span className="text-gray-500 py-1">Yapı:</span>
-          <Link
-            href={`/beton?sekme=${tab}`}
-            className={`px-2 py-1 rounded ${!yapi ? "bg-blue-700 text-white" : "bg-gray-100"}`}
-          >
+        <Chips>
+          <span className="text-sm text-gray-500">Yapı:</span>
+          <Chip href={`/beton?sekme=${tab}`} active={!yapi}>
             Tümü
-          </Link>
+          </Chip>
           {sortedStructures.map((s) => (
-            <Link
+            <Chip
               key={s.id}
               href={`/beton?sekme=${tab}&yapi=${encodeURIComponent(s.code)}`}
-              className={`px-2 py-1 rounded ${
-                yapi === s.code ? "bg-blue-700 text-white" : "bg-gray-100"
-              }`}
+              active={yapi === s.code}
             >
               {s.code}
-            </Link>
+            </Chip>
           ))}
-        </div>
+        </Chips>
       </Card>
 
-      <Card>
+      <SectionCard
+        sectionKey="beton.liste"
+        title={`Beton Dökümleri${yapi ? ` — ${yapi}` : ""}`}
+        notes={sectionNotes.get("Section:beton.liste") ?? []}
+        canWriteNote={canWriteNote}
+      >
         {pours.length === 0 ? (
           <EmptyState message="Bu aralıkta beton dökümü yok. Yeni döküm oluşturabilirsiniz." />
         ) : (
@@ -153,7 +162,7 @@ export default async function BetonPage({
             })}
           </ul>
         )}
-      </Card>
+      </SectionCard>
     </div>
   );
 }

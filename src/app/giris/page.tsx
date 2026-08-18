@@ -30,9 +30,14 @@ export default async function GirisPage({
 
   return (
     <main className="flex-1 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-white border border-gray-200 rounded-lg p-6">
-        <h1 className="text-lg font-bold text-gray-900 mb-1">Sanat Yapıları Yönetim Sistemi</h1>
-        <p className="text-sm text-gray-500 mb-6">Devam etmek için giriş yapın.</p>
+      <div className="w-full max-w-sm bg-surface rounded-2xl p-6 ring-1 ring-slate-900/5 shadow-[var(--shadow-raised)]">
+        <div className="w-10 h-10 rounded-xl bg-nav flex items-center justify-center mb-4">
+          <span className="text-white font-bold text-sm">SY</span>
+        </div>
+        <h1 className="text-lg font-bold text-slate-900 mb-1 tracking-tight">
+          Sanat Yapıları Yönetim Sistemi
+        </h1>
+        <p className="text-sm text-muted mb-6">Devam etmek için giriş yapın.</p>
         {hata && (
           <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2 mb-4">
             E-posta veya şifre hatalı.

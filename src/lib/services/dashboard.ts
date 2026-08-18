@@ -13,6 +13,12 @@ import { computeDelay } from "@/lib/logic/delay";
 import { highestSeverity } from "@/lib/logic/resources";
 import { getPourConflicts, pourTargetLabel } from "@/lib/services/pours";
 import { getPourReadinessDetail, getActivityReadiness } from "@/lib/services/readiness";
+import {
+  manualRisk,
+  mergeAttentionItems,
+  type AttentionSource,
+} from "@/lib/logic/attention";
+import { attachNotes, type NoteView, type NoteViewer } from "@/lib/services/notes";
 
 export function dayRange(offsetDays: number, lengthDays = 1) {
   const start = new Date();
@@ -69,7 +75,9 @@ export async function getDelayedActivities(limit = 50) {
 }
 
 export interface AttentionItem {
-  kind: "POUR" | "ACTIVITY";
+  /** Sistem mi hesapladı, kullanıcı mı ekledi. */
+  source: AttentionSource;
+  kind: "POUR" | "ACTIVITY" | "ELLE";
   id: string;
   code: string;
   label: string;
@@ -83,16 +91,28 @@ export interface AttentionItem {
   /** Kim sorumlu. */
   responsible: string | null;
   state: string;
+  /** Başlığın hedefi; null ise başlık link değildir. */
+  href: string | null;
+  /** Bu kaleme iliştirilmiş kullanıcı notları — tek toplu sorgudan gelir. */
+  notes: NoteView[];
+  /** Not yazarken kullanılacak polimorfik anahtar. */
+  noteEntityType: string;
 }
 
 /**
- * "Bugün Dikkat Gerektiren İşler": yakın tarihli ve risk puanı ≥3 olan işler.
- * Risk kuralları iş türüne göre seçilir; her kalem neden/ne yapılmalı taşır.
+ * "Bugün Dikkat Gerektiren İşler".
+ *
+ * İki kaynak birleşir:
+ *  • SISTEM — yakın tarihli ve risk puanı ≥3 olan işler; risk kuralları iş
+ *    türüne göre seçilir, her kalem neden/ne yapılmalı taşır.
+ *  • ELLE   — kullanıcının eklediği kalemler; risk eşiğine tabi DEĞİLDİR.
+ *
+ * KATMANLAMA İLKESİ: sistemin ürettiği metin ve kalemler asla değiştirilmez,
+ * gizlenmez veya bastırılmaz. Kullanıcı katmanı yalnızca EKLER.
  */
-export async function getAttentionItems(): Promise<AttentionItem[]> {
+export async function getAttentionItems(viewer: NoteViewer): Promise<AttentionItem[]> {
   const now = new Date();
   const in72h = new Date(now.getTime() + 72 * 3600 * 1000);
-  const items: AttentionItem[] = [];
 
   // ── Beton dökümleri ──────────────────────────────────
   const pours = await prisma.concretePour.findMany({
@@ -101,7 +121,8 @@ export async function getAttentionItems(): Promise<AttentionItem[]> {
     take: 100,
   });
 
-  for (const pour of pours) {
+  // Sıralı await yerine paralel — 100 kayıt için 200 gidiş-dönüş sıraya girmesin.
+  const pourItems = await Promise.all(pours.map(async (pour): Promise<AttentionItem | null> => {
     const [conflicts, readiness] = await Promise.all([
       getPourConflicts(pour),
       getPourReadinessDetail(pour.id),
@@ -127,7 +148,7 @@ export async function getAttentionItems(): Promise<AttentionItem[]> {
       delayDays: hoursUntil < 0 ? Math.ceil(-hoursUntil / 24) : 0,
     });
 
-    if (risk.score < 3) continue;
+    if (risk.score < 3) return null;
 
     const reasons = [
       ...readiness.reasons.map((r) => r.message),
@@ -141,7 +162,8 @@ export async function getAttentionItems(): Promise<AttentionItem[]> {
       ...conflicts.filter((c) => !c.overridden).map((c) => c.message),
     ];
 
-    items.push({
+    return {
+      source: "SISTEM",
       kind: "POUR",
       id: pour.id,
       code: pour.code,
@@ -153,8 +175,11 @@ export async function getAttentionItems(): Promise<AttentionItem[]> {
       nextActions: readiness.nextActions,
       responsible: pour.responsibleUser?.name ?? pour.crewResource?.name ?? null,
       state: readiness.summary,
-    });
-  }
+      href: `/beton/${pour.code}`,
+      noteEntityType: "ConcretePour",
+      notes: [],
+    };
+  }));
 
   // ── Aktiviteler ──────────────────────────────────────
   const activities = await prisma.activity.findMany({
@@ -170,7 +195,7 @@ export async function getAttentionItems(): Promise<AttentionItem[]> {
     take: 100,
   });
 
-  for (const a of activities) {
+  const activityItems = await Promise.all(activities.map(async (a): Promise<AttentionItem | null> => {
     const readiness = await getActivityReadiness(a.id);
     const hoursUntil = a.plannedStart ? (a.plannedStart.getTime() - now.getTime()) / 3600000 : undefined;
     const delay = computeDelay({
@@ -197,9 +222,10 @@ export async function getAttentionItems(): Promise<AttentionItem[]> {
       delayDays: delay.delayDays,
     });
 
-    if (risk.score < 3) continue;
+    if (risk.score < 3) return null;
 
-    items.push({
+    return {
+      source: "SISTEM",
       kind: "ACTIVITY",
       id: a.id,
       code: a.element.code,
@@ -211,10 +237,49 @@ export async function getAttentionItems(): Promise<AttentionItem[]> {
       nextActions: readiness.nextActions,
       responsible: a.responsibleUser?.name ?? a.crewResource?.name ?? null,
       state: readiness.summary,
-    });
-  }
+      href: `/yapilar/${a.element.structure.code}`,
+      noteEntityType: "Activity",
+      notes: [],
+    };
+  }));
 
-  return items.sort((a, b) => b.risk.score - a.risk.score);
+  const notNull = (x: AttentionItem | null): x is AttentionItem => x !== null;
+  const system = [...pourItems.filter(notNull), ...activityItems.filter(notNull)];
+
+  // ── Kullanıcının elle eklediği kalemler ──────────────
+  // Geçerlilik penceresi SQL'de süzülür; "bugün/yarın" kalemleri kendiliğinden düşer.
+  const manualRows = await prisma.userAttentionItem.findMany({
+    where: {
+      status: "ACIK",
+      validFrom: { lte: now },
+      OR: [{ validUntil: null }, { validUntil: { gte: now } }],
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+
+  const manual: AttentionItem[] = manualRows.map((m) => ({
+    source: "ELLE",
+    kind: "ELLE",
+    id: m.id,
+    code: m.structureCode ?? "—",
+    label: m.label,
+    structureCode: m.structureCode ?? "—",
+    plannedDate: m.validUntil ?? m.validFrom,
+    risk: manualRisk(m.level),
+    reasons: m.reasons,
+    nextActions: m.nextActions,
+    responsible: m.responsible,
+    state: m.detail ?? "",
+    href: m.linkHref,
+    noteEntityType: "UserAttentionItem",
+    notes: [],
+  }));
+
+  const items = mergeAttentionItems(system, manual);
+  // Notlar TEK toplu sorguyla eklenir — kalem başına sorgu YOK.
+  await attachNotes(items, viewer);
+  return items;
 }
 
 /** Ana dashboard sayaçları. */

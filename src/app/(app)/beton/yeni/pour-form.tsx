@@ -79,7 +79,7 @@ export function PourForm({
           <span className="text-gray-600"> — {selectedStructure.name}</span>
           {selectedTarget && (
             <>
-              <span className="text-gray-400"> → </span>
+              <span className="text-slate-500"> → </span>
               <span className="font-medium">{selectedTarget.label}</span>
               <span className="ml-2">
                 <Badge tone="blue">{selectedTarget.workType}</Badge>

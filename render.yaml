@@ -28,6 +28,11 @@ services:
           property: connectionString
       - key: AUTH_SECRET
         sync: false
+      # Demo kullanıcıların İLK şifresi. Render panelinden elle girilir; kodda
+      # sabit şifre tutulmaz. Kullanıcı şifresini değiştirdikten sonra seed
+      # tekrar çalışsa bile üzerine yazmaz (upsert update: {}).
+      - key: SEED_PASSWORD
+        sync: false
       - key: AUTH_TRUST_HOST
         value: "true"
 

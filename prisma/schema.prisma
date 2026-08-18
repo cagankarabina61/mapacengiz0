@@ -47,6 +47,10 @@ model User {
   archivedStructures    Structure[]       @relation("StructureArchiver")
   archivedElements      StructureElement[] @relation("ElementArchiver")
   responsibleSegments   BalancedCantileverSegment[] @relation("SegmentResponsible")
+  notes                  Note[]              @relation("NoteAuthor")
+  resolvedNotes          Note[]              @relation("NoteResolver")
+  attentionItems         UserAttentionItem[] @relation("AttentionAuthor")
+  resolvedAttentionItems UserAttentionItem[] @relation("AttentionResolver")
 }
 
 // RolePermission: rol → kaynak → eylem ince ayarı (kod değişikliği olmadan)
@@ -893,4 +897,98 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@index([changedAt])
+}
+
+// ─────────────────────────────────────────────
+// KULLANICI NOTLARI / ELLE EKLENEN DİKKAT KALEMLERİ
+// Katmanlı düzenleme: sistemin ürettiği metin ASLA silinmez veya
+// üzerine yazılmaz. Kullanıcı her zaman ÜSTÜNE not ekler.
+// ─────────────────────────────────────────────
+
+enum NoteStatus {
+  ACIK
+  COZULDU
+}
+
+// Polimorfik kullanıcı notu (Attachment/AuditLog ile aynı desen).
+// entityType iki biçimde kullanılır:
+//   • Kayıt notu → entityType = "ConcretePour" | "Activity" | ... , entityId = kaydın id'si
+//   • Bölüm notu → entityType = "Section", entityId = SectionKey (örn. "bugun.beton")
+model Note {
+  id         String     @id @default(cuid())
+  entityType String
+  entityId   String
+  // Sistemin ürettiği hangi satıra iliştirildiği — opsiyonel çapa.
+  // Risk faktörü anahtarı ("BETON_48H") veya blokaj kodu ("RFI_ACIK");
+  // null = kaydın/bölümün geneline yazılmış not.
+  anchorKey  String?
+  body       String
+  status     NoteStatus @default(ACIK)
+  // Bir kayıt düzenlemesiyle birlikte bırakıldıysa true;
+  // aynı metin AuditLog.reason alanına da yazılmıştır.
+  isEditReason Boolean  @default(false)
+
+  authorId String
+  author   User     @relation("NoteAuthor", fields: [authorId], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  // Yazar metni sonradan değiştirdiyse dolu — "düzenlendi" işareti için.
+  editedAt  DateTime?
+
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolvedBy   User?     @relation("NoteResolver", fields: [resolvedById], references: [id])
+  // Yumuşak silme — not hiçbir zaman fiziksel olarak silinmez (madde 56).
+  deletedAt    DateTime?
+
+  @@index([entityType, entityId, status])
+  @@index([createdAt])
+}
+
+enum AttentionLevel {
+  DUSUK
+  ORTA
+  YUKSEK
+}
+
+enum AttentionItemStatus {
+  ACIK
+  COZULDU
+}
+
+// Kullanıcının kendi eklediği "dikkat gerektiren iş".
+// Alanlar AttentionItem arayüzüyle birebir eşleşir; panelde
+// sistem kalemleriyle AYNI kart biçiminde gösterilir (source = "ELLE").
+model UserAttentionItem {
+  id          String         @id @default(cuid())
+  label       String // → AttentionItem.label
+  detail      String? // → AttentionItem.state (kartın ikinci satırı)
+  reasons     String[] // → "Neden:" maddeleri
+  nextActions String[] // → "Ne yapılırsa hazır olur:" maddeleri
+  // Risk rozeti; puan seviyeden türetilir (YUKSEK=6, ORTA=3, DUSUK=1)
+  level       AttentionLevel @default(ORTA)
+
+  structureCode String?
+  responsible   String?
+  // Hesaplanmış hedef; boşsa kart başlığı link değildir.
+  linkHref      String?
+
+  // Geçerlilik penceresi — "bugün/yarın" kalemleri kendiliğinden düşer.
+  validFrom  DateTime  @default(now())
+  validUntil DateTime?
+
+  status         AttentionItemStatus @default(ACIK)
+  resolutionNote String?
+  resolvedAt     DateTime?
+  resolvedById   String?
+  resolvedBy     User?               @relation("AttentionResolver", fields: [resolvedById], references: [id])
+
+  createdById String
+  createdBy   User     @relation("AttentionAuthor", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, validUntil])
+  @@index([createdById])
 }

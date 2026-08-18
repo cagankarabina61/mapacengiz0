@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { assertPermission, hasPermission, YetkiHatasi } from "@/lib/permissions";
+import { assertPermission, hasPermission, YetkiHatasi, type PermResource } from "@/lib/permissions";
 import { logChanges } from "@/lib/audit";
 import {
   createChecklistForPour,
@@ -123,7 +123,7 @@ export async function createPour(formData: FormData): Promise<ActionResult> {
 }
 
 /** Checklist maddesi işaretleme — bazı maddeler rol kısıtlı (madde 40). */
-const ROLE_RESTRICTED_ITEMS: Record<string, { resource: string; label: string }> = {
+const ROLE_RESTRICTED_ITEMS: Record<string, { resource: PermResource; label: string }> = {
   QAQC_DONE: { resource: "pourQaqc", label: "QA/QC" },
   ITP_RELEASED: { resource: "pourQaqc", label: "QA/QC" },
   SURVEY_DONE: { resource: "pourSurvey", label: "Survey" },

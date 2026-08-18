@@ -4,30 +4,43 @@ import { getDashboardCounts, getAttentionItems, getPoursInRange } from "@/lib/se
 import { getBlockedActivities } from "@/lib/services/blocking";
 import { pourTargetLabel } from "@/lib/services/pours";
 import { Card, StatusBadge, LinkButton, EmptyState, Badge } from "@/components/ui";
+import { SectionCard } from "@/components/section-card";
+import { NoteStrip } from "@/components/notes/note-strip";
 import { POUR_STATUS_LABELS, label } from "@/lib/labels";
 import { RISK_LEVEL_LABELS, WORK_KIND_LABELS } from "@/lib/logic/risk";
 import { evaluatePourReadiness } from "@/lib/logic/readiness";
+import { requireSession } from "@/lib/auth";
+import { hasPermission } from "@/lib/permissions";
+import { getSectionNotes } from "@/lib/services/notes";
+import { AddAttentionItemButton, ResolveAttentionItemButton } from "./attention-client";
 
 export const dynamic = "force-dynamic";
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: "red" | "yellow" }) {
   const color =
-    tone === "red" ? "text-red-700" : tone === "yellow" ? "text-amber-700" : "text-gray-900";
+    tone === "red" ? "text-red-700" : tone === "yellow" ? "text-amber-700" : "text-slate-900";
   return (
     <div className="text-center">
-      <p className={`text-2xl font-bold ${color}`}>{value}</p>
-      <p className="text-xs text-gray-500">{label}</p>
+      <p className={`text-2xl font-bold tabular ${color}`}>{value}</p>
+      <p className="text-xs text-muted mt-0.5 leading-tight">{label}</p>
     </div>
   );
 }
 
 export default async function DashboardPage() {
-  const [counts, attention, poursToday, blocked] = await Promise.all([
-    getDashboardCounts(),
-    getAttentionItems(),
-    getPoursInRange(0),
-    getBlockedActivities(),
-  ]);
+  const session = await requireSession();
+  const viewer = { id: session.user.id, role: session.user.role };
+
+  const [counts, attention, poursToday, blocked, canWriteNote, canAddItem, sectionNotes] =
+    await Promise.all([
+      getDashboardCounts(),
+      getAttentionItems(viewer),
+      getPoursInRange(0),
+      getBlockedActivities(),
+      hasPermission(session.user.role, "note", "create"),
+      hasPermission(session.user.role, "attentionItem", "create"),
+      getSectionNotes(["panel.dikkat", "panel.beton", "panel.bloke"], viewer),
+    ]);
 
   const trulyBlocked = blocked.filter((b) => !b.canStart);
 
@@ -74,8 +87,16 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {/* Dikkat listesi — neden + ne yapılmalı + kim (madde 11) */}
-      <Card title="Bugün Dikkat Gerektiren İşler">
+      {/* Dikkat listesi — neden + ne yapılmalı + kim (madde 11).
+          Sistem ve elle eklenen kalemler AYNI kart biçimini kullanır; ayrım
+          yalnızca küçük "Elle" köken etiketiyle yapılır. Sistem kalemlerinde
+          gizle/ertele/kapat YOKTUR — yalnızca not eklenebilir. */}
+      <SectionCard
+        sectionKey="panel.dikkat"
+        notes={sectionNotes.get("Section:panel.dikkat") ?? []}
+        canWriteNote={canWriteNote}
+        actions={canAddItem ? <AddAttentionItemButton /> : undefined}
+      >
         {attention.length === 0 ? (
           <EmptyState message="Şu anda kritik uyarı yok." />
         ) : (
@@ -83,29 +104,26 @@ export default async function DashboardPage() {
             {attention.map((item) => (
               <li
                 key={`${item.kind}-${item.id}`}
-                className="border-l-4 border-red-400 bg-red-50 rounded px-3 py-2"
+                className="border-l-4 border-red-500 bg-red-50/70 ring-1 ring-inset ring-red-100 rounded-lg px-3 py-2.5"
               >
                 <div className="flex items-start gap-3 flex-wrap">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">
-                      {item.kind === "POUR" ? (
-                        <Link href={`/beton/${item.code}`} className="hover:underline">
+                      {item.href ? (
+                        <Link href={item.href} className="hover:underline">
                           {item.label}
                         </Link>
                       ) : (
-                        <Link
-                          href={`/yapilar/${item.structureCode}`}
-                          className="hover:underline"
-                        >
-                          {item.label}
-                        </Link>
+                        item.label
                       )}
                       <span className="ml-2 text-xs font-normal text-gray-500">
-                        {WORK_KIND_LABELS[item.risk.kind]}
+                        {item.source === "ELLE"
+                          ? "Elle eklendi"
+                          : WORK_KIND_LABELS[item.risk.kind]}
                         {item.responsible ? ` · ${item.responsible}` : ""}
                       </span>
                     </p>
-                    <p className="text-xs text-gray-700 mt-0.5">{item.state}</p>
+                    {item.state && <p className="text-xs text-gray-700 mt-0.5">{item.state}</p>}
 
                     {item.reasons.length > 0 && (
                       <>
@@ -129,17 +147,36 @@ export default async function DashboardPage() {
                         </ul>
                       </>
                     )}
+
+                    {/* Kullanıcı katmanı: not her kalemde; kapatma YALNIZCA elle kalemde. */}
+                    <NoteStrip
+                      notes={item.notes}
+                      entityType={item.noteEntityType}
+                      entityId={item.id}
+                      canWrite={canWriteNote}
+                      compact
+                    />
+                    {item.source === "ELLE" && canAddItem && (
+                      <ResolveAttentionItemButton itemId={item.id} />
+                    )}
                   </div>
                   <div className="text-right shrink-0">
                     <Badge tone={item.risk.level === "YUKSEK" ? "red" : "yellow"}>
                       Risk: {RISK_LEVEL_LABELS[item.risk.level]} ({item.risk.score})
                     </Badge>
-                    <p
-                      className="text-[10px] text-gray-500 mt-1"
-                      title={item.risk.factors.map((f) => `${f.label}: +${f.points}`).join("\n")}
-                    >
-                      {item.risk.factors.map((f) => `${f.label} +${f.points}`).join(", ")}
-                    </p>
+                    {item.source === "ELLE" && (
+                      <p className="mt-1">
+                        <Badge tone="blue">Elle</Badge>
+                      </p>
+                    )}
+                    {item.source === "SISTEM" && (
+                      <p
+                        className="text-[10px] text-gray-500 mt-1"
+                        title={item.risk.factors.map((f) => `${f.label}: +${f.points}`).join("\n")}
+                      >
+                        {item.risk.factors.map((f) => `${f.label} +${f.points}`).join(", ")}
+                      </p>
+                    )}
                     {item.plannedDate && (
                       <p className="text-xs text-gray-500 mt-1">
                         {item.plannedDate.toLocaleDateString("tr-TR")}
@@ -151,10 +188,16 @@ export default async function DashboardPage() {
             ))}
           </ul>
         )}
-      </Card>
+      </SectionCard>
 
+      {/* Masaüstünde iki sütun — büyük ekranda daha az kaydırma */}
+      <div className="grid gap-4 lg:grid-cols-2">
       {/* Bugünün betonları */}
-      <Card title="Bugünün Betonları">
+      <SectionCard
+        sectionKey="panel.beton"
+        notes={sectionNotes.get("Section:panel.beton") ?? []}
+        canWriteNote={canWriteNote}
+      >
         {poursToday.length === 0 ? (
           <EmptyState message="Bugün planlanmış beton dökümü yok." />
         ) : (
@@ -191,10 +234,14 @@ export default async function DashboardPage() {
             })}
           </ul>
         )}
-      </Card>
+      </SectionCard>
 
       {/* Bloke işler */}
-      <Card title="Bloke İşler">
+      <SectionCard
+        sectionKey="panel.bloke"
+        notes={sectionNotes.get("Section:panel.bloke") ?? []}
+        canWriteNote={canWriteNote}
+      >
         {trulyBlocked.length === 0 ? (
           <EmptyState message="Bloke iş yok." />
         ) : (
@@ -221,7 +268,8 @@ export default async function DashboardPage() {
             )}
           </ul>
         )}
-      </Card>
+      </SectionCard>
+      </div>
     </div>
   );
 }

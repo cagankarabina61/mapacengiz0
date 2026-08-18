@@ -97,7 +97,7 @@ export function ImportPanel() {
                   <tbody className="divide-y divide-gray-100">
                     {preview.rows.map((r) => (
                       <tr key={r.rowNumber} className={r.errors.length > 0 ? "bg-red-50" : ""}>
-                        <td className="py-1.5 px-2 text-gray-400">{r.rowNumber}</td>
+                        <td className="py-1.5 px-2 text-slate-500">{r.rowNumber}</td>
                         <td className="py-1.5 px-2 font-medium">{r.code || "—"}</td>
                         <td className="py-1.5 px-2">{r.elementCode || "—"}</td>
                         <td className="py-1.5 px-2">{r.diameterMm ?? "—"}</td>
